@@ -1,7 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  experimental: {
+    optimizePackageImports: [
+      "@heroui/react",
+      "@heroui/theme",
+      "@phosphor-icons/react",
+      "lucide-react",
+      "recharts",
+      "framer-motion",
+    ],
+  },
 };
 
 export default nextConfig;
