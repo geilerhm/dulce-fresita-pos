@@ -49,6 +49,7 @@ export default function InventarioPage() {
   const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
   const [supplierPrices, setSupplierPrices] = useState<{ supplier_id: string; supplier_name: string; price: number; presentation_qty: number }[]>([]);
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
+  const [selectedSupplierIds, setSelectedSupplierIds] = useState<Set<string>>(new Set());
 
   // Edit/New form
   const [form, setForm] = useState(EMPTY_INGREDIENT);
@@ -127,13 +128,26 @@ export default function InventarioPage() {
     })));
   }
 
-  function openEdit(ing?: Ingredient) {
+  async function openEdit(ing?: Ingredient) {
     const target = ing || selected;
     if (!target) return;
     setSelected(target);
     setForm({ ref: target.ref, name: target.name, unit: target.unit, purchase_unit: target.purchase_unit || "", cost_per_unit: target.cost_per_unit, min_stock: target.min_stock, stock_quantity: target.stock_quantity, category_id: target.category_id, active: target.active });
     setView("edit"); setConfirmDeactivate(false); setEditNumpadTarget("cost");
     setRefManual(true); setRefDuplicate(false);
+    // Load suppliers
+    const companyId = getActiveCompanyId();
+    const { data: sups } = await supabase.from("suppliers").select("id, name").eq("company_id", companyId).eq("active", true).order("name");
+    setSuppliers(sups ?? []);
+    const { data: sp } = await supabase.from("supplier_prices").select("supplier_id, price, presentation_qty, supplier:suppliers(name)").eq("ingredient_id", target.id).eq("company_id", companyId);
+    const prices = (sp ?? []).map((p: Record<string, unknown>) => ({
+      supplier_id: p.supplier_id as string,
+      supplier_name: (p.supplier as { name: string } | null)?.name ?? "",
+      price: p.price as number,
+      presentation_qty: p.presentation_qty as number,
+    }));
+    setSupplierPrices(prices);
+    setSelectedSupplierIds(new Set(prices.map(p => p.supplier_id)));
   }
 
   function toggleSort(key: SortKey) {
@@ -196,11 +210,16 @@ export default function InventarioPage() {
     setRefDuplicate(existing.has(ref.toUpperCase()));
   }
 
-  function openNew() {
+  async function openNew() {
     setSelected(null);
     setForm({ ...EMPTY_INGREDIENT, category_id: categories[0]?.id ?? null });
     setView("new"); setConfirmDeactivate(false); setEditNumpadTarget("cost");
     setRefManual(false); setRefDuplicate(false);
+    setSupplierPrices([]);
+    setSelectedSupplierIds(new Set());
+    const companyId = getActiveCompanyId();
+    const { data: sups } = await supabase.from("suppliers").select("id, name").eq("company_id", companyId).eq("active", true).order("name");
+    setSuppliers(sups ?? []);
   }
 
   // Numpad handler
@@ -230,14 +249,26 @@ export default function InventarioPage() {
 
     setSaving(true);
     const payload = { ref: form.ref, name: form.name, unit: form.unit, purchase_unit: form.purchase_unit || null, cost_per_unit: form.cost_per_unit, min_stock: form.min_stock, category_id: form.category_id, active: form.active };
+    const companyId = getActiveCompanyId();
     if (view === "edit" && selected) {
       const { error } = await supabase.from("ingredients").update(payload).eq("id", selected.id);
       if (error) { toast.error(error.code === "23505" ? "Este código o nombre ya existe" : `Error: ${error.message}`); setSaving(false); return; }
-      toast.success("Ingrediente actualizado");
+      // Sync supplier links
+      const existingIds = new Set(supplierPrices.map(p => p.supplier_id));
+      const toRemove = [...existingIds].filter(id => !selectedSupplierIds.has(id));
+      const toAdd = [...selectedSupplierIds].filter(id => !existingIds.has(id));
+      if (toRemove.length > 0) await supabase.from("supplier_prices").delete().eq("ingredient_id", selected.id).eq("company_id", companyId).in("supplier_id", toRemove);
+      if (toAdd.length > 0) {
+        await supabase.from("supplier_prices").insert(toAdd.map(sid => ({ supplier_id: sid, ingredient_id: selected.id, price: 0, presentation_qty: 1, presentation_unit: form.unit, company_id: companyId })));
+      }
+      toast.success("Insumo actualizado");
     } else {
-      const { error } = await supabase.from("ingredients").insert({ ...payload, stock_quantity: form.stock_quantity, company_id: getActiveCompanyId() });
+      const { data, error } = await supabase.from("ingredients").insert({ ...payload, stock_quantity: form.stock_quantity, company_id: companyId }).select("id").single();
       if (error) { toast.error(error.code === "23505" ? "Este código o nombre ya existe" : `Error: ${error.message}`); setSaving(false); return; }
-      toast.success("Ingrediente creado");
+      if (data && selectedSupplierIds.size > 0) {
+        await supabase.from("supplier_prices").insert([...selectedSupplierIds].map(sid => ({ supplier_id: sid, ingredient_id: data.id, price: 0, presentation_qty: 1, presentation_unit: form.unit, company_id: companyId })));
+      }
+      toast.success("Insumo creado");
     }
     playSuccess(); setSaving(false); goBack(); fetchData();
   }
@@ -246,12 +277,12 @@ export default function InventarioPage() {
     if (!selected) return;
     setSaving(true);
     await supabase.from("ingredients").update({ active: false }).eq("id", selected.id);
-    playRemove(); toast.success("Ingrediente desactivado"); setSaving(false); goBack(); fetchData();
+    playRemove(); toast.success("Insumo desactivado"); setSaving(false); goBack(); fetchData();
   }
 
   async function handleReactivate(id: string) {
     await supabase.from("ingredients").update({ active: true }).eq("id", id);
-    playSuccess(); toast.success("Ingrediente reactivado"); fetchData();
+    playSuccess(); toast.success("Insumo reactivado"); fetchData();
   }
 
   // ── LOADING ──
@@ -275,7 +306,7 @@ export default function InventarioPage() {
             <button onClick={() => { setView("list"); setSelected(null); }} className="flex h-11 w-11 items-center justify-center rounded-2xl hover:bg-default-100 active:scale-95 transition-all">
               <ArrowLeft size={22} className="text-default-600" />
             </button>
-            <h1 className="text-lg font-bold text-default-800">Ingrediente</h1>
+            <h1 className="text-lg font-bold text-default-800">Insumo</h1>
           </div>
 
           <div className="flex-1 overflow-auto p-5 space-y-4">
@@ -325,7 +356,7 @@ export default function InventarioPage() {
               <Plus size={20} weight="bold" /> Agregar stock
             </button>
             <button onClick={() => openEdit()} className="w-full h-12 rounded-2xl bg-default-100 text-default-600 text-sm font-semibold hover:bg-default-200 active:scale-[0.97] transition-all flex items-center justify-center gap-2">
-              <PencilSimple size={16} weight="bold" /> Editar ingrediente
+              <PencilSimple size={16} weight="bold" /> Editar insumo
             </button>
             <button onClick={() => { setView("list"); setSelected(null); }} className="w-full h-11 text-sm font-medium text-default-400 hover:text-default-600 transition-colors">
               Volver
@@ -499,7 +530,7 @@ export default function InventarioPage() {
             <button onClick={goBack} className="flex h-11 w-11 items-center justify-center rounded-2xl hover:bg-default-100 active:scale-95 transition-all">
               <ArrowLeft size={22} className="text-default-600" />
             </button>
-            <h1 className="text-lg font-bold text-default-800">{view === "new" ? "Nuevo ingrediente" : "Editar ingrediente"}</h1>
+            <h1 className="text-lg font-bold text-default-800">{view === "new" ? "Nuevo insumo" : "Editar insumo"}</h1>
           </div>
 
           <div className="flex-1 overflow-auto p-5 space-y-4">
@@ -541,9 +572,9 @@ export default function InventarioPage() {
           </div>
         </div>
 
-        {/* RIGHT — Form */}
-        <div className="flex-1 overflow-auto p-6">
-          <div className="max-w-lg space-y-5">
+        {/* CENTER — Form */}
+        <div className="flex-1 overflow-auto p-6 border-r border-default-100">
+          <div className="space-y-5">
             <TextInputWithKeyboard
               value={form.name}
               onChange={handleIngNameChange}
@@ -586,21 +617,21 @@ export default function InventarioPage() {
             </div>
 
             {/* Category */}
-            <div className="pt-2">
+            <div>
               <label className="text-xs font-bold text-default-500 uppercase tracking-wider mb-2 block">Categoría</label>
-              <div className="flex flex-wrap gap-2">
+              <div className="grid grid-cols-5 gap-2">
                 {categories.map((cat) => (
                   <button key={cat.id} onClick={() => setForm((f) => ({ ...f, category_id: cat.id }))}
-                    className={`h-11 px-5 rounded-xl text-sm font-bold transition-all active:scale-95 ${form.category_id === cat.id ? "bg-primary text-white" : "bg-default-100 text-default-600 hover:bg-default-200"}`}>
+                    className={`h-11 rounded-xl text-sm font-bold transition-all active:scale-95 truncate px-2 ${form.category_id === cat.id ? "bg-primary text-white" : "bg-default-100 text-default-600 hover:bg-default-200"}`}>
                     {cat.name}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Cost + Min stock + Stock actual — centered with numpad below */}
+            {/* Cost + Min stock + Stock actual — with numpad */}
             <div className="flex flex-col items-center">
-              <div className="grid grid-cols-3 gap-3 w-full max-w-md">
+              <div className="grid grid-cols-3 gap-3 w-full">
                 <button onClick={() => setEditNumpadTarget("cost")}
                   className={`rounded-xl border p-4 text-center transition-all ${editNumpadTarget === "cost" ? "border-primary bg-primary/5" : "border-default-200 bg-white"}`}>
                   <p className="text-[10px] text-default-400 font-bold uppercase tracking-wider">Costo / {form.unit}</p>
@@ -624,7 +655,7 @@ export default function InventarioPage() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-1.5 w-full max-w-md mt-3">
+              <div className="grid grid-cols-3 gap-1.5 w-full mt-3">
                 {["1","2","3","4","5","6","7","8","9","00","0","DEL"].map((key) => (
                   <button key={key} onClick={() => {
                     const val = editNumpadTarget === "cost" ? form.cost_per_unit : editNumpadTarget === "min" ? form.min_stock : form.stock_quantity;
@@ -641,12 +672,54 @@ export default function InventarioPage() {
                 ))}
               </div>
             </div>
+          </div>
+        </div>
 
-            {/* Active toggle */}
+        {/* RIGHT — Proveedores + Estado */}
+        <div className="w-[320px] shrink-0 overflow-auto p-5 space-y-5">
+          {/* Proveedores */}
+          <div>
+            <label className="text-xs font-bold text-default-500 uppercase tracking-wider mb-2 block">Proveedores</label>
+            {suppliers.length > 0 ? (
+              <div className="space-y-1.5">
+                {suppliers.map((sup) => {
+                  const isSelected = selectedSupplierIds.has(sup.id);
+                  return (
+                    <button key={sup.id}
+                      onClick={() => setSelectedSupplierIds(prev => {
+                        const next = new Set(prev);
+                        if (next.has(sup.id)) next.delete(sup.id);
+                        else next.add(sup.id);
+                        return next;
+                      })}
+                      className={`w-full flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all active:scale-[0.97]
+                        ${isSelected ? "bg-primary/5 border-primary" : "bg-default-50 border-default-100 hover:border-default-300"}`}
+                    >
+                      <div className={`flex h-5 w-5 items-center justify-center rounded-md border-2 shrink-0 transition-colors
+                        ${isSelected ? "border-primary bg-primary" : "border-default-300"}`}>
+                        {isSelected && <Check size={12} weight="bold" className="text-white" />}
+                      </div>
+                      <span className={`text-sm font-semibold ${isSelected ? "text-primary" : "text-default-700"}`}>{sup.name}</span>
+                    </button>
+                  );
+                })}
+                <a href="/proveedores" className="block text-xs text-primary font-bold hover:underline text-center pt-1">Gestionar proveedores</a>
+              </div>
+            ) : (
+              <div className="rounded-xl bg-default-50 border border-default-100 p-4 text-center">
+                <p className="text-xs text-default-400 mb-2">No hay proveedores</p>
+                <a href="/proveedores" className="text-xs text-primary font-bold hover:underline">Crear proveedor</a>
+              </div>
+            )}
+          </div>
+
+          {/* Active toggle */}
+          <div>
+            <label className="text-xs font-bold text-default-500 uppercase tracking-wider mb-2 block">Estado</label>
             <div className="flex items-center justify-between rounded-2xl bg-default-50 border border-default-100 p-4">
               <div>
-                <p className="text-sm font-bold text-default-800">Activo</p>
-                <p className="text-[11px] text-default-400">Se muestra en el inventario</p>
+                <p className="text-sm font-bold text-default-800">{form.active ? "Activo" : "Inactivo"}</p>
+                <p className="text-[11px] text-default-400">{form.active ? "Visible en inventario" : "Oculto del inventario"}</p>
               </div>
               <button onClick={() => setForm((f) => ({ ...f, active: !f.active }))}
                 className={`relative w-14 h-8 rounded-full transition-colors ${form.active ? "bg-emerald-500" : "bg-default-300"}`}>
@@ -667,7 +740,7 @@ export default function InventarioPage() {
           <div>
             <h1 className="text-xl font-bold text-default-800">Inventario</h1>
             <p className="text-xs text-default-400 mt-0.5">
-              {filtered.length} ingredientes
+              {filtered.length} insumos
               {lowStockCount > 0 && <span className="text-red-500 font-bold ml-2">· {lowStockCount} con stock bajo</span>}
             </p>
           </div>
@@ -678,7 +751,7 @@ export default function InventarioPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <SearchWithKeyboard value={search} onChange={setSearch} placeholder="Buscar ingrediente..." />
+          <SearchWithKeyboard value={search} onChange={setSearch} placeholder="Buscar insumo..." />
           <div className="flex items-center gap-1.5">
             <span className="text-[10px] text-default-400 font-semibold">Inactivos</span>
             <button onClick={() => setShowInactive(!showInactive)}
@@ -707,7 +780,7 @@ export default function InventarioPage() {
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16">
             <Package size={48} weight="duotone" className="text-default-300 mb-3" />
-            <p className="text-sm text-default-400">No se encontraron ingredientes</p>
+            <p className="text-sm text-default-400">No se encontraron insumos</p>
           </div>
         ) : (
           <div className="rounded-2xl bg-white border border-default-100 mx-6 my-4 overflow-hidden">

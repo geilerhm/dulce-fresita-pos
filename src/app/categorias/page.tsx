@@ -124,7 +124,7 @@ export default function CategoriasPage() {
 
   async function handleDelete(cat: Category) {
     if (cat._count && cat._count > 0) {
-      toast.error(`No se puede eliminar: tiene ${cat._count} ${cat.type === "product" ? "productos" : "ingredientes"}`);
+      toast.error(`No se puede eliminar: tiene ${cat._count} ${cat.type === "product" ? "productos" : "insumos"}`);
       setDeletingId(null);
       return;
     }
@@ -191,7 +191,7 @@ export default function CategoriasPage() {
                 <ProductIcon name={formIcon} size={40} />
               </div>
               <p className="text-lg font-bold text-default-900">{formName || "Sin nombre"}</p>
-              <p className="text-xs text-default-400 mt-1">{catType === "product" ? "Productos" : "Ingredientes"}</p>
+              <p className="text-xs text-default-400 mt-1">{catType === "product" ? "Productos" : "Insumos"}</p>
             </div>
           </div>
 
@@ -268,7 +268,7 @@ export default function CategoriasPage() {
           </div>
           <div>
             <h1 className="text-lg font-bold text-default-900">Categorías</h1>
-            <p className="text-sm text-default-500">Organiza productos e ingredientes</p>
+            <p className="text-sm text-default-500">Organiza productos e insumos</p>
           </div>
         </div>
         <button onClick={openNew}
@@ -286,7 +286,7 @@ export default function CategoriasPage() {
           </button>
           <button onClick={() => setCatType("ingredient")}
             className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${catType === "ingredient" ? "bg-white text-default-800 shadow-sm" : "text-default-400"}`}>
-            Ingredientes ({categories.filter(c => c.type === "ingredient").length})
+            Insumos ({categories.filter(c => c.type === "ingredient").length})
           </button>
         </div>
       </div>
@@ -300,7 +300,7 @@ export default function CategoriasPage() {
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4">
             <SquaresFour size={48} weight="duotone" className="text-default-300" />
-            <p className="text-sm text-default-400">No hay categorías de {catType === "product" ? "productos" : "ingredientes"}</p>
+            <p className="text-sm text-default-400">No hay categorías de {catType === "product" ? "productos" : "insumos"}</p>
 
             <div className="w-full max-w-md rounded-2xl bg-white border border-default-100 p-5 space-y-4">
               <p className="text-xs font-bold text-default-500 uppercase tracking-wider">Sugerencias</p>
@@ -326,7 +326,7 @@ export default function CategoriasPage() {
                   <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-default-500 w-14">Icono</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-default-500">Nombre</th>
                   <th className="px-4 py-3 text-center text-[11px] font-bold uppercase tracking-wider text-default-500">
-                    {catType === "product" ? "Productos" : "Ingredientes"}
+                    {catType === "product" ? "Productos" : "Insumos"}
                   </th>
                   <th className="px-4 py-3 text-center text-[11px] font-bold uppercase tracking-wider text-default-500 w-16">Orden</th>
                   <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-default-500 w-28">Acciones</th>

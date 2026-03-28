@@ -111,7 +111,7 @@ export default function LoginPage() {
                 <div className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Usuario</label>
-                    <inputvalue={username} onChange={(e) => { setUsername(e.target.value); setError(""); }}
+                    <input value={username} onChange={(e) => { setUsername(e.target.value); setError(""); }}
                       onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                       placeholder="tu usuario" autoFocus
                       className="h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-base outline-none focus:border-primary transition-all w-full" />
@@ -119,7 +119,7 @@ export default function LoginPage() {
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Contraseña</label>
-                    <inputtype="password" value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                    <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }}
                       onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                       placeholder="tu contraseña"
                       className="h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-base outline-none focus:border-primary transition-all w-full" />
@@ -129,7 +129,7 @@ export default function LoginPage() {
                 <div className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Nombre completo</label>
-                    <inputvalue={regName} onChange={(e) => { setRegName(e.target.value); setError(""); }}
+                    <input value={regName} onChange={(e) => { setRegName(e.target.value); setError(""); }}
                       onKeyDown={(e) => e.key === "Enter" && handleRegister()}
                       placeholder="Ej: Alejandra Hipia" autoFocus
                       className="h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-base outline-none focus:border-primary transition-all w-full" />
@@ -137,7 +137,7 @@ export default function LoginPage() {
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Usuario</label>
-                    <inputvalue={regUser} onChange={(e) => { setRegUser(e.target.value.toLowerCase().replace(/\s/g, "")); setError(""); }}
+                    <input value={regUser} onChange={(e) => { setRegUser(e.target.value.toLowerCase().replace(/\s/g, "")); setError(""); }}
                       onKeyDown={(e) => e.key === "Enter" && handleRegister()}
                       placeholder="sin espacios"
                       className="h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-base outline-none focus:border-primary transition-all w-full" />
@@ -145,7 +145,7 @@ export default function LoginPage() {
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Contraseña</label>
-                    <inputtype="password" value={regPass} onChange={(e) => { setRegPass(e.target.value); setError(""); }}
+                    <input type="password" value={regPass} onChange={(e) => { setRegPass(e.target.value); setError(""); }}
                       onKeyDown={(e) => e.key === "Enter" && handleRegister()}
                       placeholder="mínimo 4 caracteres"
                       className="h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-base outline-none focus:border-primary transition-all w-full" />
@@ -202,7 +202,7 @@ export default function LoginPage() {
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Nueva empresa</label>
                 <div className="flex gap-2">
-                  <inputvalue={newCompanyName} onChange={(e) => setNewCompanyName(e.target.value)}
+                  <input value={newCompanyName} onChange={(e) => setNewCompanyName(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleAddCompany()}
                     placeholder="Nombre de tu empresa..."
                     className="flex-1 h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-sm outline-none focus:border-primary transition-all" />

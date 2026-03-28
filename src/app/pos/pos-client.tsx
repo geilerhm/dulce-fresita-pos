@@ -108,7 +108,7 @@ export function POSClient({ categories, products }: POSClientProps) {
           </div>
 
           {/* Product grid — shrinks when keyboard is open */}
-          <div className="flex-1 overflow-auto bg-gray-50">
+          <div className="flex-1 overflow-auto bg-gray-50" onClick={() => keyboardOpen && handleCloseKeyboard()}>
             <ProductGrid products={filteredProducts} />
           </div>
 
