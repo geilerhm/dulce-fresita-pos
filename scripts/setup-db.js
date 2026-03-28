@@ -28,7 +28,7 @@ async function run() {
     -- Products
     CREATE TABLE IF NOT EXISTS products (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      ref text NOT NULL UNIQUE,
+      ref text NOT NULL,
       name text NOT NULL,
       category_id uuid REFERENCES categories(id),
       price int NOT NULL DEFAULT 0,
@@ -39,13 +39,14 @@ async function run() {
       active boolean DEFAULT true,
       sort_order int DEFAULT 0,
       created_at timestamptz DEFAULT now(),
-      updated_at timestamptz DEFAULT now()
+      updated_at timestamptz DEFAULT now(),
+      company_id text
     );
 
     -- Ingredients
     CREATE TABLE IF NOT EXISTS ingredients (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      ref text NOT NULL UNIQUE,
+      ref text NOT NULL,
       name text NOT NULL,
       category_id uuid REFERENCES categories(id),
       unit text NOT NULL DEFAULT 'und',
@@ -66,7 +67,7 @@ async function run() {
       quantity decimal(10,4) NOT NULL,
       unit text NOT NULL DEFAULT 'und',
       created_at timestamptz DEFAULT now(),
-      UNIQUE(product_id, ingredient_id)
+      company_id text
     );
 
     -- Suppliers
@@ -88,7 +89,7 @@ async function run() {
       presentation_unit text DEFAULT 'und',
       lead_days int DEFAULT 1,
       created_at timestamptz DEFAULT now(),
-      UNIQUE(supplier_id, ingredient_id)
+      company_id text
     );
 
     -- Cash registers

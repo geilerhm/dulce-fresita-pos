@@ -48,6 +48,7 @@ export function SalesHistory() {
     const { data: allItems } = await supabase
       .from("sale_items")
       .select("sale_id, product_name, quantity, subtotal")
+      .eq("company_id", companyId)
       .in("sale_id", saleIds);
 
     const itemsMap = new Map<string, { product_name: string; quantity: number; subtotal: number }[]>();

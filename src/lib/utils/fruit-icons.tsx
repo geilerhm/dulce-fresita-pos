@@ -7,13 +7,13 @@ interface IconProps {
 
 export function Strawberry({ size = 32, className }: IconProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 256 256" fill="none" className={className}>
-      <path d="M128 56c-44 0-72 36-72 84 0 44 28 76 72 76s72-32 72-76c0-48-28-84-72-84z" fill="currentColor" opacity="0.25"/>
-      <path d="M128 56c-44 0-72 36-72 84 0 44 28 76 72 76s72-32 72-76c0-48-28-84-72-84z" stroke="currentColor" strokeWidth="14" strokeLinejoin="round" fill="none"/>
-      <path d="M128 56c-4-16 8-32 20-40M128 56c4-16-8-32-20-40" stroke="currentColor" strokeWidth="14" strokeLinecap="round"/>
-      <circle cx="108" cy="120" r="7" fill="currentColor"/><circle cx="148" cy="120" r="7" fill="currentColor"/>
-      <circle cx="128" cy="152" r="7" fill="currentColor"/><circle cx="100" cy="160" r="7" fill="currentColor"/>
-      <circle cx="156" cy="160" r="7" fill="currentColor"/><circle cx="128" cy="96" r="7" fill="currentColor"/>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="m17 7 3.5-3.5"/>
+      <path d="M17 2v5h5"/>
+      <path d="M2.1 17.1a4 4 0 0 0 4.8 4.8l9-2.1a6.32 6.32 0 0 0 2.9-10.9L15 5.2A6.5 6.5 0 0 0 4.1 8.3Z"/>
+      <path d="M8.5 9.5h.01"/><path d="M12.5 8.5h.01"/><path d="M7.5 13.5h.01"/>
+      <path d="M11.5 12.5h.01"/><path d="M15.5 11.5h.01"/><path d="M6.5 17.5h.01"/>
+      <path d="M10.5 16.5h.01"/><path d="M14.5 15.5h.01"/>
     </svg>
   );
 }

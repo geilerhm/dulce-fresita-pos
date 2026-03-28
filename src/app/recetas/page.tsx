@@ -6,6 +6,7 @@ import { getActiveCompanyId } from "@/lib/supabase/company";
 import { formatCOP } from "@/lib/utils/format";
 import { ProductIcon } from "@/lib/utils/product-icons";
 import { playAdd, playSuccess, playRemove } from "@/lib/utils/sounds";
+import { toast } from "sonner";
 import {
   MagnifyingGlass,
   ArrowLeft,
@@ -225,11 +226,14 @@ export default function RecetasPage() {
         unit: selectedIngredient.unit,
         company_id: getActiveCompanyId(),
       },
-      { onConflict: "product_id,ingredient_id" }
+      { onConflict: "product_id,ingredient_id,company_id" }
     );
 
-    if (!error) {
+    if (error) {
+      toast.error("Error al agregar ingrediente");
+    } else {
       playAdd();
+      toast.success("Ingrediente agregado");
       setSelectedIngredient(null);
       setQuantity("");
       await fetchRecipe(selectedProduct.id);
@@ -251,10 +255,14 @@ export default function RecetasPage() {
       const { error } = await supabase
         .from("recipes")
         .delete()
-        .eq("id", recipeId);
+        .eq("id", recipeId)
+        .eq("company_id", getActiveCompanyId());
 
-      if (!error) {
+      if (error) {
+        toast.error("Error al eliminar ingrediente");
+      } else {
         playRemove();
+        toast.success("Ingrediente eliminado");
         setDeletingId(null);
         await fetchRecipe(selectedProduct.id);
         await recalcProductCost(selectedProduct.id);

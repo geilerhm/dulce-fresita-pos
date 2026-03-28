@@ -113,6 +113,7 @@ export function useOfflineSync() {
     for (const sale of queue) {
       try {
         // Insert sale
+        const companyId = getActiveCompanyId();
         const { data, error } = await supabase
           .from("sales")
           .insert({
@@ -121,6 +122,7 @@ export function useOfflineSync() {
             status: "completed",
             register_id: sale.register_id,
             created_at: sale.created_at,
+            company_id: companyId,
           })
           .select("id")
           .single();
@@ -130,6 +132,7 @@ export function useOfflineSync() {
         // Insert items
         const items = sale.items.map((item) => ({
           sale_id: data.id,
+          company_id: companyId,
           ...item,
         }));
         await supabase.from("sale_items").insert(items);

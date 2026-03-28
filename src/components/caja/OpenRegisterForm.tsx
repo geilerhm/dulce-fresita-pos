@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { useCaja } from "@/contexts/CajaContext";
 import { formatCOP } from "@/lib/utils/format";
-import { Wallet, WarningCircle } from "@phosphor-icons/react";
+import { Wallet, WarningCircle, Backspace } from "@phosphor-icons/react";
 import { playSuccess } from "@/lib/utils/sounds";
+import { toast } from "sonner";
 
-const QUICK_AMOUNTS = [50000, 100000, 200000, 300000];
+const QUICK_AMOUNTS = [0, 50000, 100000, 150000, 200000, 250000];
 
 export function OpenRegisterForm() {
   const { openRegister } = useCaja();
@@ -27,6 +28,7 @@ export function OpenRegisterForm() {
     try {
       await openRegister(amount);
       playSuccess();
+      toast.success("Caja abierta");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al abrir caja");
       setConfirming(false);
@@ -63,7 +65,7 @@ export function OpenRegisterForm() {
           )}
 
           {/* Quick amounts */}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {QUICK_AMOUNTS.map((amt) => (
               <button
                 key={amt}
@@ -74,25 +76,51 @@ export function OpenRegisterForm() {
                     : "bg-default-100 text-default-600 hover:bg-default-200"
                   }`}
               >
-                {formatCOP(amt)}
+                {amt === 0 ? "$0" : `$${amt / 1000}K`}
               </button>
             ))}
           </div>
 
-          {/* Custom input — uses physical keyboard if available */}
-          <input
-            type="text"
-            inputMode="none"
-            placeholder="Usa los botones de arriba"
-            value={customInput ? `$ ${parseInt(customInput).toLocaleString("es-CO")}` : ""}
-            readOnly
-            className="w-full h-14 rounded-xl border border-default-200 bg-white px-4 text-2xl font-bold text-center outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all tabular-nums"
-          />
+          {/* Custom amount display + numpad */}
+          <button
+            onClick={() => { setCustomInput(""); handleAmountChange(0); }}
+            className="w-full h-14 rounded-xl border border-default-200 bg-white px-4 text-center hover:bg-default-50 transition-all"
+          >
+            <p className="text-[10px] text-default-400 font-bold uppercase tracking-wider">Monto personalizado</p>
+            <p className={`text-xl font-extrabold tabular-nums ${customInput ? "text-default-900" : "text-default-300"}`}>
+              {customInput ? formatCOP(parseInt(customInput)) : "$ 0"}
+            </p>
+          </button>
+
+          {/* Numpad */}
+          <div className="grid grid-cols-3 gap-1.5">
+            {["1","2","3","4","5","6","7","8","9","00","0","DEL"].map((key) => (
+              <button
+                key={key}
+                onClick={() => {
+                  if (key === "DEL") {
+                    const next = customInput.slice(0, -1);
+                    setCustomInput(next);
+                    handleAmountChange(parseInt(next) || 0);
+                  } else {
+                    const next = customInput + key;
+                    if (next.length > 7) return;
+                    setCustomInput(next);
+                    handleAmountChange(parseInt(next) || 0);
+                  }
+                }}
+                className={`flex items-center justify-center h-12 rounded-xl text-base font-bold transition-all active:scale-95 select-none
+                  ${key === "DEL" ? "bg-default-200 text-default-600" : "bg-white border border-default-200 text-default-800 hover:bg-default-50"}`}
+              >
+                {key === "DEL" ? <Backspace size={20} weight="bold" /> : key}
+              </button>
+            ))}
+          </div>
 
           {/* Open / Confirm button */}
           <button
             onClick={handleOpen}
-            disabled={loading || amount <= 0}
+            disabled={loading}
             className={`w-full h-14 rounded-2xl text-lg font-bold shadow-lg active:scale-[0.97] transition-all disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2
               ${confirming
                 ? "bg-emerald-500 text-white shadow-emerald-500/25 hover:bg-emerald-600"
@@ -103,10 +131,8 @@ export function OpenRegisterForm() {
               <span className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
             ) : confirming ? (
               `Confirmar con ${formatCOP(amount)}`
-            ) : amount > 0 ? (
-              `Abrir Caja — ${formatCOP(amount)}`
             ) : (
-              "Abrir Caja"
+              `Abrir Caja — ${formatCOP(amount)}`
             )}
           </button>
 

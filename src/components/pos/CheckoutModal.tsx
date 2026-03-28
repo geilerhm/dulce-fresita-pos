@@ -7,6 +7,7 @@ import { VoidSaleModal } from "@/components/caja/VoidSaleModal";
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { playSuccess, playAdd } from "@/lib/utils/sounds";
+import { toast } from "sonner";
 import { useCaja } from "@/contexts/CajaContext";
 import { useOnlineStatus, queueSale } from "@/lib/hooks/useOffline";
 import { getActiveCompanyId } from "@/lib/supabase/company";
@@ -110,7 +111,7 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
         .single();
       if (saleError) throw saleError;
 
-      const dbItems = saleItems.map((item) => ({ sale_id: sale.id, ...item }));
+      const dbItems = saleItems.map((item) => ({ sale_id: sale.id, company_id: getActiveCompanyId(), ...item }));
       const { error: itemsError } = await supabase.from("sale_items").insert(dbItems);
       if (itemsError) throw itemsError;
 
@@ -132,6 +133,7 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
         created_at: new Date().toISOString(),
       });
       playSuccess();
+      toast.warning("Sin conexión — venta guardada para sincronizar");
       clear();
       setSuccess({ saleId: "queued", saleNumber: Math.floor(Math.random() * 9000) + 1000, total });
       setTimeout(() => { setSuccess(null); onClose(); }, 2000);

@@ -7,6 +7,7 @@ import { ProductIcon, ICON_CATEGORIES } from "@/lib/utils/product-icons";
 import { formatCOP } from "@/lib/utils/format";
 import { NumericKeypad } from "@/components/ui/NumericKeypad";
 import { playSuccess, playAdd, playRemove } from "@/lib/utils/sounds";
+import { toast } from "sonner";
 import { ScrollShadow } from "@heroui/react";
 import {
   MagnifyingGlass,
@@ -94,6 +95,11 @@ export default function ProductosPage() {
   const [form, setForm] = useState(EMPTY_PRODUCT);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Ref auto-suggest
+  const [refManual, setRefManual] = useState(false);
+  const [refDuplicate, setRefDuplicate] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
 
   // Recipe state
   const [rightTab, setRightTab] = useState<RightTab>("icon");
@@ -193,17 +199,24 @@ export default function ProductosPage() {
     const qty = parseFloat(addQty);
     if (isNaN(qty) || qty <= 0) return;
 
-    await supabase.from("recipes").upsert({
+    const { error } = await supabase.from("recipes").upsert({
       product_id: editProduct.id, ingredient_id: addingIngredient.id, quantity: qty, unit: addingIngredient.unit, company_id: getActiveCompanyId(),
-    }, { onConflict: "product_id,ingredient_id" });
+    }, { onConflict: "product_id,ingredient_id,company_id" });
 
-    // Update ingredient cost if changed
-    const newCost = parseInt(addIngCost);
-    if (!isNaN(newCost) && newCost > 0 && newCost !== addingIngredient.cost_per_unit) {
-      await supabase.from("ingredients").update({ cost_per_unit: newCost }).eq("id", addingIngredient.id);
+    if (error) { toast.error("Error al agregar ingrediente"); return; }
+
+    // If user edited the total cost, derive the new cost_per_unit and update ingredient
+    const totalCost = parseInt(addIngCost) || 0;
+    const suggestedTotal = Math.round(qty * addingIngredient.cost_per_unit);
+    if (totalCost > 0 && totalCost !== suggestedTotal && qty > 0) {
+      const newCostPerUnit = Math.round(totalCost / qty);
+      if (newCostPerUnit !== addingIngredient.cost_per_unit) {
+        await supabase.from("ingredients").update({ cost_per_unit: newCostPerUnit }).eq("id", addingIngredient.id);
+      }
     }
 
     playAdd();
+    toast.success("Ingrediente agregado");
     setAddingIngredient(null);
     setEditingRecipeId(null);
     setAddQty("");
@@ -221,8 +234,10 @@ export default function ProductosPage() {
 
   async function handleRemoveIngredient(recipeId: string) {
     if (!editProduct) return;
-    await supabase.from("recipes").delete().eq("id", recipeId);
+    const { error } = await supabase.from("recipes").delete().eq("id", recipeId).eq("company_id", getActiveCompanyId());
+    if (error) { toast.error("Error al eliminar ingrediente"); return; }
     playRemove();
+    toast.success("Ingrediente eliminado");
     await fetchRecipe(editProduct.id);
     await recalcCost(editProduct.id);
   }
@@ -235,7 +250,7 @@ export default function ProductosPage() {
       .eq("company_id", companyId)
       .eq("product_id", productId) as unknown as { data: { quantity: number; ingredient: { cost_per_unit: number } | null }[] | null };
     const cost = (data ?? []).reduce((s, r) => s + r.quantity * (r.ingredient?.cost_per_unit ?? 0), 0);
-    await supabase.from("products").update({ cost: Math.round(cost) }).eq("id", productId);
+    await supabase.from("products").update({ cost: Math.round(cost) }).eq("id", productId).eq("company_id", getActiveCompanyId());
     setForm((f) => ({ ...f, cost: Math.round(cost) }));
   }
 
@@ -259,8 +274,98 @@ export default function ProductosPage() {
     setRightTab("icon");
     setAddingIngredient(null);
     setIngredientSearch("");
+    setRefManual(true); // In edit mode, ref is already set
+    setRefDuplicate(false);
     fetchRecipe(p.id);
     fetchIngredients();
+  }
+
+  // Words to skip when generating the ref code
+  const STOP_WORDS = new Set(["de", "del", "con", "y", "la", "el", "las", "los", "en", "a", "por", "para", "un", "una"]);
+  const SIZE_UNITS = new Set(["oz", "ml", "gr", "kg", "lt", "l", "und", "pers"]);
+
+  function generateRef(name: string): string {
+    const clean = name.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    // Merge number + unit that are separated by space (e.g. "12 oz" → "12OZ")
+    const merged = clean.replace(/(\d+)\s+(oz|ml|gr|kg|lt|l|und|pers)\b/gi, "$1$2");
+    const tokens = merged.split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return "";
+
+    const parts: string[] = [];
+    // Count meaningful words (not stop words, not pure numbers/sizes)
+    const meaningful = tokens.filter(t => !STOP_WORDS.has(t.toLowerCase()) && !/^\d+$/i.test(t));
+
+    for (const token of tokens) {
+      const lower = token.toLowerCase();
+      if (STOP_WORDS.has(lower)) continue;
+      // Keep size tokens (9oz, 12oz, x10, etc.) as-is
+      if (/^\d+\w*$/.test(token) || /^x\d+/i.test(token)) {
+        parts.push(token.toUpperCase());
+      } else if (meaningful.length <= 2) {
+        // Few words → take first 4 chars
+        parts.push(token.substring(0, 4).toUpperCase());
+      } else {
+        // Many words → take first 3 chars for first word, first letter for rest
+        parts.push(parts.length === 0 ? token.substring(0, 3).toUpperCase() : token[0].toUpperCase());
+      }
+    }
+
+    return parts.join("-") || clean.substring(0, 6).toUpperCase();
+  }
+
+  function ensureUniqueRef(base: string): string {
+    const existingRefs = new Set(products.map((p) => p.ref.toUpperCase()));
+    // If editing, exclude the current product's ref
+    if (editProduct) existingRefs.delete(editProduct.ref.toUpperCase());
+    if (!existingRefs.has(base.toUpperCase())) return base;
+    // Append -2, -3, etc.
+    for (let i = 2; i <= 99; i++) {
+      const candidate = `${base}-${i}`;
+      if (!existingRefs.has(candidate.toUpperCase())) return candidate;
+    }
+    return base;
+  }
+
+  function handleNameChange(name: string) {
+    setForm((f) => ({ ...f, name }));
+    // Auto-suggest ref only in new mode and if user hasn't manually edited
+    if (view === "new" && !refManual) {
+      const suggested = ensureUniqueRef(generateRef(name));
+      setForm((f) => ({ ...f, name, ref: suggested }));
+      setRefDuplicate(false);
+    }
+  }
+
+  function handleRefChange(ref: string) {
+    setRefManual(true);
+    setForm((f) => ({ ...f, ref }));
+    // Check uniqueness
+    const existingRefs = new Set(products.map((p) => p.ref.toUpperCase()));
+    if (editProduct) existingRefs.delete(editProduct.ref.toUpperCase());
+    setRefDuplicate(existingRefs.has(ref.toUpperCase()));
+  }
+
+  async function handleCreateCategory() {
+    const name = newCategoryName.trim();
+    if (!name) return;
+    const slug = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    const companyId = getActiveCompanyId();
+
+    const { data, error } = await supabase
+      .from("categories")
+      .insert({ name, slug, type: "product", sort_order: categories.length, company_id: companyId })
+      .select("id, name, slug")
+      .single();
+
+    if (error) {
+      toast.error(error.code === "23505" ? "Esta categoría ya existe" : "Error al crear categoría");
+      return;
+    }
+
+    setCategories((prev) => [...prev, data]);
+    setForm((f) => ({ ...f, category_id: data.id }));
+    setNewCategoryName("");
+    toast.success(`Categoría "${name}" creada`);
   }
 
   function openNew() {
@@ -270,25 +375,51 @@ export default function ProductosPage() {
     setConfirmDelete(false);
     setRightTab("icon");
     setRecipeRows([]);
+    setRefManual(false);
+    setRefDuplicate(false);
+    setNewCategoryName("");
   }
 
   function goBack() {
-    if (view === "edit" && editProduct) { openView(editProduct); return; }
     setView("list"); setEditProduct(null); setConfirmDelete(false); setRecipeRows([]); setAddingIngredient(null);
+    fetchData();
   }
 
   async function handleSave() {
+    if (!form.name.trim()) { toast.error("El nombre es requerido"); return; }
+    if (!form.ref.trim()) { toast.error("El código es requerido"); return; }
+    if (refDuplicate) { toast.error("Este código ya existe"); return; }
+    if (!form.category_id) { toast.error("Selecciona una categoría"); return; }
+
     setSaving(true);
     const payload = { ref: form.ref, name: form.name, price: form.price, cost: form.cost, description: form.description, icon: form.icon, category_id: form.category_id, available_in_pos: form.available_in_pos, active: form.active, sort_order: form.sort_order };
     if (view === "edit" && editProduct) {
-      await supabase.from("products").update(payload).eq("id", editProduct.id);
+      const { error } = await supabase.from("products").update(payload).eq("id", editProduct.id).eq("company_id", getActiveCompanyId());
+      if (error) { toast.error(error.code === "23505" ? "Este código ya existe" : `Error: ${error.message}`); setSaving(false); return; }
+      playSuccess();
+      toast.success("Producto actualizado");
+      setSaving(false);
+      setView("list");
+      setEditProduct(null);
+      fetchData();
     } else {
-      await supabase.from("products").insert({ ...payload, company_id: getActiveCompanyId() });
+      // Create product, then open in edit mode so user can add ingredients
+      const { data, error } = await supabase.from("products").insert({ ...payload, company_id: getActiveCompanyId() }).select("id, ref, name, price, cost, description, icon, category_id, available_in_pos, active, sort_order").single();
+      if (error) { toast.error(error.code === "23505" ? "Este código ya existe" : `Error: ${error.message}`); setSaving(false); return; }
+      await fetchData();
+      setSaving(false);
+      if (data) {
+        const newProduct: Product = { ...data, cost: data.cost ?? 0, description: data.description ?? "", icon: data.icon ?? "IceCream", category_name: categories.find(c => c.id === data.category_id)?.name ?? "" };
+        setEditProduct(newProduct);
+        setView("edit");
+        setRightTab("recipe");
+        setRefManual(true);
+        fetchRecipe(newProduct.id);
+        fetchIngredients();
+        playSuccess();
+        toast.success("Producto creado — agrega ingredientes a la receta");
+      }
     }
-    playSuccess();
-    await fetchData();
-    setSaving(false);
-    goBack();
   }
 
   async function handleDeactivate() {
@@ -296,14 +427,36 @@ export default function ProductosPage() {
     setSaving(true);
     await supabase.from("products").update({ active: false }).eq("id", editProduct.id);
     playSuccess();
+    toast.success("Producto desactivado");
     await fetchData();
     setSaving(false);
     goBack();
   }
 
+  async function handleDelete() {
+    if (!editProduct) return;
+    setSaving(true);
+    const companyId = getActiveCompanyId();
+    // Delete recipes first (FK constraint)
+    await supabase.from("recipes").delete().eq("product_id", editProduct.id).eq("company_id", companyId);
+    const { error } = await supabase.from("products").delete().eq("id", editProduct.id).eq("company_id", companyId);
+    if (error) {
+      toast.error("No se puede eliminar: tiene ventas asociadas");
+      setSaving(false);
+      return;
+    }
+    playRemove();
+    toast.success("Producto eliminado");
+    await fetchData();
+    setSaving(false);
+    setView("list");
+    setEditProduct(null);
+  }
+
   async function handleReactivate(id: string) {
     await supabase.from("products").update({ active: true }).eq("id", id);
     playSuccess();
+    toast.success("Producto reactivado");
     fetchData();
   }
 
@@ -433,7 +586,6 @@ export default function ProductosPage() {
   // ── EDIT / NEW VIEW ──────────────────────────────
 
   if (view === "edit" || view === "new") {
-    const canSave = form.name.trim() && form.ref.trim() && form.category_id;
     const nameEmpty = form.name.trim() === "";
     const refEmpty = form.ref.trim() === "";
 
@@ -459,7 +611,7 @@ export default function ProductosPage() {
               <p className="text-2xl font-extrabold tabular-nums text-primary mt-2">{formatCOP(form.price)}</p>
               {form.cost > 0 && (
                 <p className="text-xs text-default-400 tabular-nums mt-1">
-                  Costo: {formatCOP(form.cost)} · Margen: {((form.price - form.cost) / form.price * 100).toFixed(0)}%
+                  Costo: {formatCOP(form.cost)}{form.price > 0 && form.cost > 0 ? ` · Margen: ${((form.price - form.cost) / form.price * 100).toFixed(0)}%` : ""}
                 </p>
               )}
               <div className="flex gap-2 mt-3">
@@ -476,15 +628,24 @@ export default function ProductosPage() {
 
             {/* Danger zone */}
             {!view.startsWith("new") && editProduct && (
-              <div className="rounded-2xl bg-red-50/50 border border-red-200 p-5">
+              <div className="rounded-2xl bg-red-50/50 border border-red-200 p-5 space-y-2">
                 <p className="text-xs font-bold text-red-500 uppercase tracking-wider mb-2">Zona de peligro</p>
-                <p className="text-xs text-default-500 mb-3">Desactivar oculta el producto del POS.</p>
+                {editProduct.active && (
+                  <button
+                    onClick={() => setConfirmDelete(true)}
+                    className="flex items-center justify-center gap-2 w-full h-11 rounded-xl border border-red-300 text-red-500 font-bold text-sm hover:bg-red-100 transition-colors active:scale-95"
+                  >
+                    <TrashSimple size={18} weight="duotone" />
+                    Desactivar
+                  </button>
+                )}
                 <button
-                  onClick={() => setConfirmDelete(true)}
-                  className="flex items-center justify-center gap-2 w-full h-12 rounded-xl border border-red-300 text-red-500 font-bold text-sm hover:bg-red-100 transition-colors active:scale-95"
+                  onClick={handleDelete}
+                  disabled={saving}
+                  className="flex items-center justify-center gap-2 w-full h-11 rounded-xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 transition-colors active:scale-95 disabled:opacity-40"
                 >
-                  <TrashSimple size={18} weight="duotone" />
-                  Desactivar producto
+                  <Trash size={18} weight="bold" />
+                  Eliminar permanentemente
                 </button>
               </div>
             )}
@@ -494,13 +655,13 @@ export default function ProductosPage() {
           <div className="p-4 border-t border-default-100 space-y-2">
             <button
               onClick={handleSave}
-              disabled={!canSave || saving}
+              disabled={saving}
               className="w-full h-14 rounded-2xl bg-primary text-white text-base font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2"
             >
               {saving ? (
                 <span className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
-                <><Check size={20} weight="bold" /> Guardar</>
+                <><Check size={20} weight="bold" /> {view === "new" ? "Crear producto" : "Guardar"}</>
               )}
             </button>
             <button onClick={goBack} className="w-full h-12 rounded-2xl bg-default-100 text-default-500 text-sm font-semibold hover:bg-default-200 active:scale-[0.97] transition-all">
@@ -515,20 +676,19 @@ export default function ProductosPage() {
             {/* Name */}
             <TextInputWithKeyboard
               value={form.name}
-              onChange={(v) => setForm((f) => ({ ...f, name: v }))}
+              onChange={handleNameChange}
               label="Nombre *"
               placeholder="Ej: Ensalada de Frutas"
-              error={nameEmpty ? "El nombre es requerido" : undefined}
             />
 
             {/* Ref */}
             <TextInputWithKeyboard
               value={form.ref}
-              onChange={(v) => setForm((f) => ({ ...f, ref: v }))}
+              onChange={handleRefChange}
               label="Código *"
               placeholder="Ej: ENS-001"
               uppercase
-              error={refEmpty ? "El código es requerido" : undefined}
+              error={refDuplicate ? "Este código ya existe" : undefined}
             />
 
             {/* Category */}
@@ -546,6 +706,25 @@ export default function ProductosPage() {
                     {cat.name}
                   </button>
                 ))}
+              </div>
+              {/* Crear categoría inline */}
+              <div className="flex gap-2 mt-3">
+                <input
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleCreateCategory()}
+                  placeholder="Nueva categoría..."
+                  className="flex-1 h-10 px-3 rounded-xl border border-dashed border-default-300 bg-white text-sm outline-none focus:border-primary transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={handleCreateCategory}
+                  disabled={!newCategoryName.trim()}
+                  className="h-10 px-4 rounded-xl bg-default-100 text-default-600 text-sm font-semibold hover:bg-default-200 active:scale-95 transition-all disabled:opacity-40 flex items-center gap-1.5"
+                >
+                  <Plus size={14} weight="bold" /> Crear
+                </button>
               </div>
             </div>
 
@@ -658,8 +837,8 @@ export default function ProductosPage() {
 
                 {/* Add ingredient */}
                 {addingIngredient ? (
-                  <div className={`rounded-2xl p-4 space-y-3 ${editingRecipeId ? "bg-blue-50/50 border border-blue-200" : "bg-primary/5 border border-primary/20"}`}>
-                    <p className={`text-xs font-bold ${editingRecipeId ? "text-blue-600" : "text-primary"}`}>
+                  <div className="rounded-2xl p-4 space-y-3 bg-primary/5 border border-primary/20">
+                    <p className="text-xs font-bold text-primary">
                       {editingRecipeId ? "Editar" : "Agregar"}: {addingIngredient.name}
                     </p>
                     {/* Quantity + Cost displays */}
@@ -671,20 +850,43 @@ export default function ProductosPage() {
                       </button>
                       <button onClick={() => setRecipeNumpadTarget("cost")}
                         className={`rounded-xl border p-3 text-left transition-all ${recipeNumpadTarget === "cost" ? "border-primary bg-primary/5" : "border-default-200 bg-white"}`}>
-                        <p className="text-[10px] text-default-400 font-semibold">Costo / {addingIngredient.unit}</p>
-                        <p className={`text-lg font-extrabold tabular-nums mt-0.5 ${addIngCost ? "text-default-900" : "text-default-300"}`}>{addIngCost ? `$${parseInt(addIngCost).toLocaleString("es-CO")}` : `$${addingIngredient.cost_per_unit.toLocaleString("es-CO")}`}</p>
+                        <p className="text-[10px] text-default-400 font-semibold">Costo total</p>
+                        <p className={`text-lg font-extrabold tabular-nums mt-0.5 ${addIngCost ? "text-default-900" : "text-default-300"}`}>
+                          {formatCOP(parseInt(addIngCost) || 0)}
+                        </p>
                       </button>
                     </div>
-                    {addQty && parseFloat(addQty) > 0 && (
-                      <p className="text-[10px] text-default-400 tabular-nums">
-                        Subtotal: {formatCOP(Math.round(parseFloat(addQty) * (parseInt(addIngCost) || addingIngredient.cost_per_unit)))}
-                      </p>
-                    )}
+                    {(() => {
+                      const qty = parseFloat(addQty) || 0;
+                      const suggestedCost = Math.round(qty * addingIngredient.cost_per_unit);
+                      const actualCost = parseInt(addIngCost) || 0;
+                      const diff = actualCost - suggestedCost;
+                      if (qty <= 0) return null;
+                      return (
+                        <p className="text-[10px] tabular-nums">
+                          <span className="text-default-500">{addQty} {addingIngredient.unit} × {formatCOP(addingIngredient.cost_per_unit)}/{addingIngredient.unit} = {formatCOP(suggestedCost)}</span>
+                          {diff !== 0 && (
+                            <span className={`font-bold ml-1.5 ${diff < 0 ? "text-red-500" : "text-emerald-600"}`}>
+                              ({diff > 0 ? "+" : ""}{formatCOP(diff)})
+                            </span>
+                          )}
+                        </p>
+                      );
+                    })()}
                     {/* Inline numpad */}
-                    <RecipeNumpad value={recipeNumpadTarget === "qty" ? addQty : addIngCost} onChange={(v) => recipeNumpadTarget === "qty" ? setAddQty(v) : setAddIngCost(v)} allowDecimal={recipeNumpadTarget === "qty"} />
+                    <RecipeNumpad value={recipeNumpadTarget === "qty" ? addQty : addIngCost} onChange={(v) => {
+                      if (recipeNumpadTarget === "qty") {
+                        setAddQty(v);
+                        // Auto-update cost based on new quantity
+                        const qty = parseFloat(v) || 0;
+                        setAddIngCost(String(Math.round(qty * addingIngredient.cost_per_unit)));
+                      } else {
+                        setAddIngCost(v);
+                      }
+                    }} allowDecimal={recipeNumpadTarget === "qty"} />
                     <div className="flex gap-2">
                       <button onClick={handleAddIngredient} disabled={!addQty || parseFloat(addQty) <= 0}
-                        className={`flex-1 h-10 rounded-xl text-white text-sm font-bold active:scale-95 transition-all disabled:opacity-40 ${editingRecipeId ? "bg-blue-500" : "bg-primary"}`}>
+                        className="flex-1 h-10 rounded-xl bg-primary text-white text-sm font-bold active:scale-95 transition-all disabled:opacity-40">
                         {editingRecipeId ? "Guardar" : "Agregar"}
                       </button>
                       <button onClick={() => { setAddingIngredient(null); setEditingRecipeId(null); setAddQty(""); setAddIngCost(""); }}
@@ -704,7 +906,7 @@ export default function ProductosPage() {
                         .filter((i) => !recipeRows.some((r) => r.ingredient_id === i.id))
                         .slice(0, 15)
                         .map((ing, idx) => (
-                          <button key={ing.id} onClick={() => { setAddingIngredient(ing); setIngredientSearch(""); }}
+                          <button key={ing.id} onClick={() => { setAddingIngredient(ing); setAddIngCost(String(ing.cost_per_unit)); setIngredientSearch(""); }}
                             className={`w-full flex items-center justify-between px-3 py-2 text-left hover:bg-default-50 active:bg-default-100 transition-colors text-xs ${idx > 0 ? "border-t border-default-50" : ""}`}>
                             <span className="font-semibold text-default-700 truncate">{ing.name}</span>
                             <span className="text-default-400 shrink-0 ml-2">{ing.unit}</span>
@@ -995,6 +1197,18 @@ function RecipeNumpad({ value, onChange, allowDecimal }: { value: string; onChan
     if (next.length > 8) return;
     onChange(next);
   }
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (/^[0-9]$/.test(e.key)) { handleKey(e.key); e.preventDefault(); }
+      else if (e.key === "." && allowDecimal) { handleKey("."); e.preventDefault(); }
+      else if (e.key === "Backspace") { handleKey("DEL"); e.preventDefault(); }
+      else if (e.key === "Delete") { handleKey("C"); e.preventDefault(); }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
 
   const keys = allowDecimal
     ? ["1","2","3","4","5","6","7","8","9",".","0","DEL"]

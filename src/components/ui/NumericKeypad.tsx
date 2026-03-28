@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { formatCOP } from "@/lib/utils/format";
 import { Backspace } from "@phosphor-icons/react";
 import { playAdd } from "@/lib/utils/sounds";
@@ -38,6 +39,17 @@ export function NumericKeypad({ value, onChange, maxDigits = 7, label }: Numeric
   function handleClear() {
     onChange(0);
   }
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (/^[0-9]$/.test(e.key)) { handleKey(e.key); e.preventDefault(); }
+      else if (e.key === "Backspace") { handleKey("DEL"); e.preventDefault(); }
+      else if (e.key === "Delete") { handleClear(); e.preventDefault(); }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
 
   return (
     <div className="space-y-3">

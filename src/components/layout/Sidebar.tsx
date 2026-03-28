@@ -17,6 +17,7 @@ import {
   WifiHigh,
   WifiSlash,
   CloudArrowUp,
+  SquaresFour,
 } from "@phosphor-icons/react";
 import { useOfflineSync } from "@/lib/hooks/useOffline";
 import { useCaja } from "@/contexts/CajaContext";
@@ -28,6 +29,7 @@ const NAV_TOP = [
   { href: "/caja", label: "Caja", Icon: Wallet },
   { href: "/productos", label: "Productos", Icon: Tag },
   { href: "/inventario", label: "Inventario", Icon: Package },
+  { href: "/categorias", label: "Categorías", Icon: SquaresFour },
 ];
 
 const NAV_BOTTOM = [

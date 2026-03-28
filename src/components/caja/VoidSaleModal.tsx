@@ -4,7 +4,9 @@ import { formatCOP } from "@/lib/utils/format";
 import { X, Check, WarningCircle } from "@phosphor-icons/react";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { getActiveCompanyId } from "@/lib/supabase/company";
 import { playRemove } from "@/lib/utils/sounds";
+import { toast } from "sonner";
 
 interface VoidSaleModalProps {
   isOpen: boolean;
@@ -37,7 +39,8 @@ export function VoidSaleModal({ isOpen, sale, onClose, onVoided }: VoidSaleModal
       const { error: updateError } = await supabase
         .from("sales")
         .update({ status: "voided", voided_reason: selectedReason })
-        .eq("id", sale.id);
+        .eq("id", sale.id)
+        .eq("company_id", getActiveCompanyId());
 
       if (updateError) throw updateError;
 
@@ -45,10 +48,12 @@ export function VoidSaleModal({ isOpen, sale, onClose, onVoided }: VoidSaleModal
       await supabase.rpc("fn_reverse_inventory", { p_sale_id: sale.id });
 
       playRemove();
+      toast.success("Venta anulada");
       onVoided();
       onClose();
       setSelectedReason(null);
     } catch (e) {
+      toast.error("Error al anular venta");
       setError(e instanceof Error ? e.message : "Error al anular");
     } finally {
       setProcessing(false);

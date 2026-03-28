@@ -44,6 +44,8 @@ export function TextInputWithKeyboard({ value, onChange, placeholder, label, err
       {error && <p className="text-[11px] text-red-500 mt-1">{error}</p>}
 
       {open && (
+        <>
+        <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
         <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-default-200 bg-default-100 px-4 py-2.5 space-y-1.5">
           {/* Numbers row */}
           <div className="flex gap-1 justify-center">
@@ -102,6 +104,7 @@ export function TextInputWithKeyboard({ value, onChange, placeholder, label, err
             </button>
           </div>
         </div>
+        </>
       )}
     </div>
   );

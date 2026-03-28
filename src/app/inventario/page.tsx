@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { getActiveCompanyId } from "@/lib/supabase/company";
 import { formatCOP } from "@/lib/utils/format";
 import { playSuccess, playRemove } from "@/lib/utils/sounds";
+import { toast } from "sonner";
 import {
   Package, MagnifyingGlass, ArrowLeft, Plus, Check, Warning,
   PencilSimple, Backspace, TrashSimple, CaretUp, CaretDown,
@@ -25,7 +26,7 @@ type View = "list" | "view" | "addStock" | "edit" | "new";
 type SortKey = "name" | "stock" | "cost" | null;
 type SortDir = "asc" | "desc";
 
-const EMPTY_INGREDIENT = { ref: "", name: "", unit: "und", purchase_unit: "", cost_per_unit: 0, min_stock: 0, category_id: "" as string | null, active: true };
+const EMPTY_INGREDIENT = { ref: "", name: "", unit: "und", purchase_unit: "", cost_per_unit: 0, min_stock: 0, stock_quantity: 0, category_id: "" as string | null, active: true };
 
 export default function InventarioPage() {
   const supabase = createClient();
@@ -44,11 +45,13 @@ export default function InventarioPage() {
   const [addCost, setAddCost] = useState(0);
   const [costMode, setCostMode] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [editNumpadTarget, setEditNumpadTarget] = useState<"cost" | "min">("cost");
+  const [editNumpadTarget, setEditNumpadTarget] = useState<"cost" | "min" | "stock">("cost");
 
   // Edit/New form
   const [form, setForm] = useState(EMPTY_INGREDIENT);
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+  const [refManual, setRefManual] = useState(false);
+  const [refDuplicate, setRefDuplicate] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -114,8 +117,9 @@ export default function InventarioPage() {
     const target = ing || selected;
     if (!target) return;
     setSelected(target);
-    setForm({ ref: target.ref, name: target.name, unit: target.unit, purchase_unit: target.purchase_unit || "", cost_per_unit: target.cost_per_unit, min_stock: target.min_stock, category_id: target.category_id, active: target.active });
+    setForm({ ref: target.ref, name: target.name, unit: target.unit, purchase_unit: target.purchase_unit || "", cost_per_unit: target.cost_per_unit, min_stock: target.min_stock, stock_quantity: target.stock_quantity, category_id: target.category_id, active: target.active });
     setView("edit"); setConfirmDeactivate(false); setEditNumpadTarget("cost");
+    setRefManual(true); setRefDuplicate(false);
   }
 
   function toggleSort(key: SortKey) {
@@ -133,10 +137,56 @@ export default function InventarioPage() {
     return sortDir === "asc" ? <CaretUp size={12} weight="bold" className="ml-1 text-primary" /> : <CaretDown size={12} weight="bold" className="ml-1 text-primary" />;
   }
 
+  const STOP_WORDS = new Set(["de", "del", "con", "y", "la", "el", "las", "los", "en", "a", "por", "para", "un", "una"]);
+
+  function generateIngRef(name: string): string {
+    const clean = name.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const merged = clean.replace(/(\d+)\s+(oz|ml|gr|kg|lt|l|und)\b/gi, "$1$2");
+    const tokens = merged.split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return "";
+    const parts: string[] = [];
+    const meaningful = tokens.filter(t => !STOP_WORDS.has(t.toLowerCase()));
+    for (const token of tokens) {
+      if (STOP_WORDS.has(token.toLowerCase())) continue;
+      if (/^\d+\w*$/.test(token) || /^x\d+/i.test(token)) { parts.push(token.toUpperCase()); continue; }
+      parts.push(meaningful.length <= 2 ? token.substring(0, 4).toUpperCase() : (parts.length === 0 ? token.substring(0, 3).toUpperCase() : token[0].toUpperCase()));
+    }
+    return "ING-" + (parts.join("-") || clean.substring(0, 6).toUpperCase());
+  }
+
+  function ensureUniqueIngRef(base: string): string {
+    const existing = new Set(ingredients.map((i) => i.ref.toUpperCase()));
+    if (selected) existing.delete(selected.ref.toUpperCase());
+    if (!existing.has(base.toUpperCase())) return base;
+    for (let i = 2; i <= 99; i++) {
+      const candidate = `${base}-${i}`;
+      if (!existing.has(candidate.toUpperCase())) return candidate;
+    }
+    return base;
+  }
+
+  function handleIngNameChange(name: string) {
+    setForm((f) => ({ ...f, name }));
+    if (view === "new" && !refManual) {
+      const suggested = ensureUniqueIngRef(generateIngRef(name));
+      setForm((f) => ({ ...f, name, ref: suggested }));
+      setRefDuplicate(false);
+    }
+  }
+
+  function handleIngRefChange(ref: string) {
+    setRefManual(true);
+    setForm((f) => ({ ...f, ref }));
+    const existing = new Set(ingredients.map((i) => i.ref.toUpperCase()));
+    if (selected) existing.delete(selected.ref.toUpperCase());
+    setRefDuplicate(existing.has(ref.toUpperCase()));
+  }
+
   function openNew() {
     setSelected(null);
     setForm({ ...EMPTY_INGREDIENT, category_id: categories[0]?.id ?? null });
     setView("new"); setConfirmDeactivate(false); setEditNumpadTarget("cost");
+    setRefManual(false); setRefDuplicate(false);
   }
 
   // Numpad handler
@@ -156,16 +206,24 @@ export default function InventarioPage() {
       const newCostPerUnit = Math.round(addCost / addQty);
       await supabase.from("ingredients").update({ cost_per_unit: newCostPerUnit }).eq("id", selected.id);
     }
-    playSuccess(); setSaving(false); goBack(); fetchData();
+    playSuccess(); toast.success("Stock actualizado"); setSaving(false); goBack(); fetchData();
   }
 
   async function handleSaveIngredient() {
+    if (!form.name.trim()) { toast.error("El nombre es requerido"); return; }
+    if (!form.ref.trim()) { toast.error("El código es requerido"); return; }
+    if (refDuplicate) { toast.error("Este código ya existe"); return; }
+
     setSaving(true);
     const payload = { ref: form.ref, name: form.name, unit: form.unit, purchase_unit: form.purchase_unit || null, cost_per_unit: form.cost_per_unit, min_stock: form.min_stock, category_id: form.category_id, active: form.active };
     if (view === "edit" && selected) {
-      await supabase.from("ingredients").update(payload).eq("id", selected.id);
+      const { error } = await supabase.from("ingredients").update(payload).eq("id", selected.id);
+      if (error) { toast.error(error.code === "23505" ? "Este código o nombre ya existe" : `Error: ${error.message}`); setSaving(false); return; }
+      toast.success("Ingrediente actualizado");
     } else {
-      await supabase.from("ingredients").insert({ ...payload, stock_quantity: 0, company_id: getActiveCompanyId() });
+      const { error } = await supabase.from("ingredients").insert({ ...payload, stock_quantity: form.stock_quantity, company_id: getActiveCompanyId() });
+      if (error) { toast.error(error.code === "23505" ? "Este código o nombre ya existe" : `Error: ${error.message}`); setSaving(false); return; }
+      toast.success("Ingrediente creado");
     }
     playSuccess(); setSaving(false); goBack(); fetchData();
   }
@@ -174,12 +232,12 @@ export default function InventarioPage() {
     if (!selected) return;
     setSaving(true);
     await supabase.from("ingredients").update({ active: false }).eq("id", selected.id);
-    playRemove(); setSaving(false); goBack(); fetchData();
+    playRemove(); toast.success("Ingrediente desactivado"); setSaving(false); goBack(); fetchData();
   }
 
   async function handleReactivate(id: string) {
     await supabase.from("ingredients").update({ active: true }).eq("id", id);
-    playSuccess(); fetchData();
+    playSuccess(); toast.success("Ingrediente reactivado"); fetchData();
   }
 
   // ── LOADING ──
@@ -390,7 +448,6 @@ export default function InventarioPage() {
   if ((view === "edit" || view === "new") && (selected || view === "new")) {
     const nameEmpty = !form.name.trim();
     const refEmpty = !form.ref.trim();
-    const canSave = !nameEmpty && !refEmpty;
 
     return (
       <div className="flex h-full bg-gray-50">
@@ -434,7 +491,7 @@ export default function InventarioPage() {
           </div>
 
           <div className="p-4 border-t border-default-100 space-y-2">
-            <button onClick={handleSaveIngredient} disabled={!canSave || saving}
+            <button onClick={handleSaveIngredient} disabled={saving}
               className="w-full h-14 rounded-2xl bg-primary text-white text-base font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2">
               {saving ? <span className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><Check size={20} weight="bold" /> Guardar</>}
             </button>
@@ -447,27 +504,25 @@ export default function InventarioPage() {
           <div className="max-w-lg space-y-5">
             <TextInputWithKeyboard
               value={form.name}
-              onChange={(v) => setForm((f) => ({ ...f, name: v }))}
+              onChange={handleIngNameChange}
               label="Nombre *"
               placeholder="Ej: Fresa fresca"
-              error={nameEmpty ? "Requerido" : undefined}
             />
 
             <TextInputWithKeyboard
               value={form.ref}
-              onChange={(v) => setForm((f) => ({ ...f, ref: v }))}
+              onChange={handleIngRefChange}
               label="Código *"
               placeholder="Ej: ING-FRESA"
               uppercase
-              error={refEmpty ? "Requerido" : undefined}
+              error={refDuplicate ? "Este código ya existe" : undefined}
             />
-            </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-bold text-default-500 uppercase tracking-wider mb-1.5 block">Unidad de stock</label>
                 <div className="flex flex-wrap gap-2">
-                  {["und", "kg", "g", "L", "ml"].map((u) => (
+                  {["und", "kg", "g", "L", "ml", "caja", "bolsa", "tarro", "paquete"].map((u) => (
                     <button key={u} onClick={() => setForm((f) => ({ ...f, unit: u }))}
                       className={`h-11 px-4 rounded-xl text-sm font-bold transition-all active:scale-95 ${form.unit === u ? "bg-primary text-white" : "bg-default-100 text-default-600 hover:bg-default-200"}`}>
                       {u}
@@ -489,7 +544,7 @@ export default function InventarioPage() {
             </div>
 
             {/* Category */}
-            <div>
+            <div className="pt-2">
               <label className="text-xs font-bold text-default-500 uppercase tracking-wider mb-2 block">Categoría</label>
               <div className="flex flex-wrap gap-2">
                 {categories.map((cat) => (
@@ -501,9 +556,9 @@ export default function InventarioPage() {
               </div>
             </div>
 
-            {/* Cost + Min stock — centered with numpad below */}
+            {/* Cost + Min stock + Stock actual — centered with numpad below */}
             <div className="flex flex-col items-center">
-              <div className="grid grid-cols-2 gap-3 w-full max-w-sm">
+              <div className="grid grid-cols-3 gap-3 w-full max-w-md">
                 <button onClick={() => setEditNumpadTarget("cost")}
                   className={`rounded-xl border p-4 text-center transition-all ${editNumpadTarget === "cost" ? "border-primary bg-primary/5" : "border-default-200 bg-white"}`}>
                   <p className="text-[10px] text-default-400 font-bold uppercase tracking-wider">Costo / {form.unit}</p>
@@ -518,14 +573,26 @@ export default function InventarioPage() {
                     {form.min_stock > 0 ? `${form.min_stock} ${form.unit}` : "0"}
                   </p>
                 </button>
+                <button onClick={() => setEditNumpadTarget("stock")}
+                  className={`rounded-xl border p-4 text-center transition-all ${editNumpadTarget === "stock" ? "border-primary bg-primary/5" : "border-default-200 bg-white"}`}>
+                  <p className="text-[10px] text-default-400 font-bold uppercase tracking-wider">Stock actual</p>
+                  <p className={`text-xl font-extrabold tabular-nums mt-1 ${form.stock_quantity > 0 ? "text-emerald-600" : "text-default-300"}`}>
+                    {form.stock_quantity > 0 ? `${form.stock_quantity} ${form.unit}` : "0"}
+                  </p>
+                </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-1.5 w-full max-w-sm mt-3">
+              <div className="grid grid-cols-3 gap-1.5 w-full max-w-md mt-3">
                 {["1","2","3","4","5","6","7","8","9","00","0","DEL"].map((key) => (
-                  <button key={key} onClick={() => numpadKey(key,
-                    editNumpadTarget === "cost" ? form.cost_per_unit : form.min_stock,
-                    (n) => editNumpadTarget === "cost" ? setForm((f) => ({ ...f, cost_per_unit: n })) : setForm((f) => ({ ...f, min_stock: n }))
-                  )}
+                  <button key={key} onClick={() => {
+                    const val = editNumpadTarget === "cost" ? form.cost_per_unit : editNumpadTarget === "min" ? form.min_stock : form.stock_quantity;
+                    const setter = (n: number) => {
+                      if (editNumpadTarget === "cost") setForm((f) => ({ ...f, cost_per_unit: n }));
+                      else if (editNumpadTarget === "min") setForm((f) => ({ ...f, min_stock: n }));
+                      else setForm((f) => ({ ...f, stock_quantity: n }));
+                    };
+                    numpadKey(key, val, setter);
+                  }}
                     className={`flex items-center justify-center h-12 rounded-xl text-base font-bold transition-all active:scale-95 select-none ${key === "DEL" ? "bg-default-200 text-default-600" : "bg-white border border-default-200 text-default-800 hover:bg-default-50"}`}>
                     {key === "DEL" ? <Backspace size={20} weight="bold" /> : key}
                   </button>
@@ -546,6 +613,7 @@ export default function InventarioPage() {
             </div>
           </div>
         </div>
+      </div>
     );
   }
 

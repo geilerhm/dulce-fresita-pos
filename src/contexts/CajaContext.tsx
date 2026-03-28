@@ -88,10 +88,12 @@ export function CajaProvider({ children }: { children: ReactNode }) {
   const openRegister = useCallback(async (initialCash: number) => {
     const supabase = createClient();
 
+    const companyId = getActiveCompanyId();
     const { data: existing } = await supabase
       .from("cash_registers")
       .select("id")
       .eq("status", "open")
+      .eq("company_id", companyId)
       .limit(1);
 
     if (existing && existing.length > 0) {
