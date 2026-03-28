@@ -4,10 +4,10 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, TextField, Input, Label } from "@heroui/react";
-import { FlowerLotus, Warning, Plus, Trash, Storefront, ArrowRight } from "@phosphor-icons/react";
+import { FlowerLotus, Warning, Plus, Trash, Storefront, ArrowRight, SignOut } from "@phosphor-icons/react";
 
 export default function LoginPage() {
-  const { login, register, isAuthenticated, companies, activeCompany, addCompany, selectCompany, deleteCompany } = useAuth();
+  const { login, register, logout, isAuthenticated, companies, activeCompany, addCompany, selectCompany, deleteCompany } = useAuth();
   const router = useRouter();
 
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -28,33 +28,40 @@ export default function LoginPage() {
     else if (isAuthenticated) setStep("company");
   }, [isAuthenticated, activeCompany, router]);
 
-  function handleLogin() {
+  const [loading, setLoading] = useState(false);
+
+  async function handleLogin() {
     setError("");
     if (!username || !password) { setError("Completa todos los campos"); return; }
-    if (!login(username, password)) setError("Usuario o contraseña incorrectos");
-    else if (companies.length === 1) { selectCompany(companies[0].id); router.push("/pos"); }
-    else setStep("company");
+    setLoading(true);
+    const result = await login(username, password);
+    setLoading(false);
+    if (!result.success) setError(result.error || "Usuario o contraseña incorrectos");
   }
 
-  function handleRegister() {
+  async function handleRegister() {
     setError("");
     if (!regName || !regUser || !regPass) { setError("Completa todos los campos"); return; }
-    const result = register(regUser, regPass, regName);
-    if (result.success) {
-      // New user goes directly to create first company
-      setStep("company");
-    }
-    else setError(result.error || "Error al registrar");
+    setLoading(true);
+    const result = await register(regUser, regPass, regName);
+    setLoading(false);
+    if (!result.success) setError(result.error || "Error al registrar");
   }
 
   function handleSelectCompany(id: string) { selectCompany(id); router.push("/pos"); }
 
-  function handleAddCompany() {
+  async function handleAddCompany() {
     if (!newCompanyName.trim()) return;
-    const c = addCompany(newCompanyName.trim());
-    setNewCompanyName("");
-    selectCompany(c.id);
-    router.push("/pos");
+    setLoading(true);
+    try {
+      const c = await addCompany(newCompanyName.trim());
+      setNewCompanyName("");
+      selectCompany(c.id);
+      router.push("/pos");
+    } catch {
+      setError("Error al crear empresa. ¿Tienes conexión?");
+    }
+    setLoading(false);
   }
 
   return (
@@ -153,9 +160,9 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <button onClick={mode === "login" ? handleLogin : handleRegister}
-                className="w-full h-14 rounded-2xl bg-primary text-white text-lg font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all flex items-center justify-center gap-2">
-                {mode === "login" ? "Ingresar" : "Crear cuenta"} <ArrowRight size={20} weight="bold" />
+              <button onClick={mode === "login" ? handleLogin : handleRegister} disabled={loading}
+                className="w-full h-14 rounded-2xl bg-primary text-white text-lg font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all flex items-center justify-center gap-2 disabled:opacity-60">
+                {loading ? "Cargando..." : mode === "login" ? "Ingresar" : "Crear cuenta"} {!loading && <ArrowRight size={20} weight="bold" />}
               </button>
             </div>
           ) : (
@@ -178,7 +185,7 @@ export default function LoginPage() {
                           </div>
                           <div className="flex-1">
                             <p className="text-base font-bold text-default-800">{company.name}</p>
-                            <p className="text-xs text-default-400">{new Date(company.createdAt).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}</p>
+                            <p className="text-xs text-default-400">{new Date(company.created_at).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}</p>
                           </div>
                           <ArrowRight size={18} className="text-default-300" />
                         </button>
@@ -205,6 +212,11 @@ export default function LoginPage() {
                   </button>
                 </div>
               </TextField>
+
+              <button onClick={() => { logout(); setStep("auth"); }}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-default-400 hover:text-red-500 hover:bg-red-50 transition-all">
+                <SignOut size={18} weight="bold" /> Cerrar sesión
+              </button>
             </div>
           )}
         </div>

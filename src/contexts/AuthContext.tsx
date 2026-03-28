@@ -1,218 +1,261 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 interface Company {
   id: string;
   name: string;
-  owner: string; // username
-  createdAt: string;
+  owner_id: string;
+  created_at: string;
 }
 
-interface UserAccount {
+interface CachedUser {
+  id: string;
   username: string;
   password: string;
+  display_name: string;
+}
+
+interface Session {
+  id: string;
+  username: string;
   displayName: string;
-  createdAt: string;
 }
 
 interface AuthContextValue {
   isAuthenticated: boolean;
+  userId: string | null;
   username: string | null;
   displayName: string | null;
   activeCompany: Company | null;
-  companies: Company[]; // only this user's companies
-  login: (username: string, password: string) => boolean;
-  register: (username: string, password: string, displayName: string) => { success: boolean; error?: string };
+  companies: Company[];
+  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  register: (username: string, password: string, displayName: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
-  addCompany: (name: string) => Company;
+  addCompany: (name: string) => Promise<Company>;
   selectCompany: (id: string) => void;
-  deleteCompany: (id: string) => void;
+  deleteCompany: (id: string) => Promise<void>;
 }
 
-const AUTH_KEY = "dulce-fresita-auth";
-const USERS_KEY = "dulce-fresita-users";
-const COMPANIES_KEY = "dulce-fresita-companies-v2";
-const ACTIVE_COMPANY_KEY = "dulce-fresita-active-company";
+// localStorage keys — only used as offline cache
+const CACHE = {
+  session: "dulce-fresita-session",
+  users: "dulce-fresita-users-cache",
+  companies: "dulce-fresita-companies-cache",
+  activeCompany: "dulce-fresita-active-company",
+};
 
-function loadUsers(): UserAccount[] {
+function cacheSet(key: string, value: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+
+function cacheGet<T>(key: string): T | null {
   try {
-    const data = localStorage.getItem(USERS_KEY);
-    if (!data) {
-      const defaults: UserAccount[] = [
-        { username: "dulcefresita", password: "123456", displayName: "Dulce Fresita", createdAt: new Date().toISOString() },
-        { username: "dulcefresita_test", password: "123456", displayName: "Dulce Fresita (Test)", createdAt: new Date().toISOString() },
-      ];
-      localStorage.setItem(USERS_KEY, JSON.stringify(defaults));
-
-      // Seed test company for dulcefresita_test
-      const existingCompanies = localStorage.getItem(COMPANIES_KEY);
-      if (!existingCompanies) {
-        const seedCompanies: Company[] = [
-          { id: "test-dulcefresita", name: "Dulce Fresita Test", owner: "dulcefresita_test", createdAt: new Date().toISOString() },
-        ];
-        localStorage.setItem(COMPANIES_KEY, JSON.stringify(seedCompanies));
-      }
-
-      return defaults;
-    }
-    return JSON.parse(data);
-  } catch { return []; }
+    const d = localStorage.getItem(key);
+    return d ? JSON.parse(d) : null;
+  } catch { return null; }
 }
 
-function saveUsers(users: UserAccount[]) {
-  try { localStorage.setItem(USERS_KEY, JSON.stringify(users)); } catch {}
-}
-
-function loadAllCompanies(): Company[] {
-  try { const d = localStorage.getItem(COMPANIES_KEY); return d ? JSON.parse(d) : []; } catch { return []; }
-}
-
-function saveAllCompanies(companies: Company[]) {
-  try { localStorage.setItem(COMPANIES_KEY, JSON.stringify(companies)); } catch {}
-}
-
-function loadAuth(): { username: string; displayName: string } | null {
-  try { const d = localStorage.getItem(AUTH_KEY); return d ? JSON.parse(d) : null; } catch { return null; }
-}
-
-function loadActiveCompanyId(): string | null {
-  try { return localStorage.getItem(ACTIVE_COMPANY_KEY); } catch { return null; }
+function cacheRemove(key: string) {
+  try { localStorage.removeItem(key); } catch {}
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [username, setUsername] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState<string | null>(null);
-  const [userCompanies, setUserCompanies] = useState<Company[]>([]);
+  const [session, setSession] = useState<Session | null>(null);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [activeCompany, setActiveCompany] = useState<Company | null>(null);
   const [loaded, setLoaded] = useState(false);
 
-  function loadUserCompanies(user: string) {
-    const all = loadAllCompanies();
-    return all.filter((c) => c.owner === user);
-  }
+  // Fetch companies from Supabase for a given user, cache them
+  const fetchCompanies = useCallback(async (userId: string): Promise<Company[]> => {
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("companies")
+        .select("id, name, owner_id, created_at")
+        .eq("owner_id", userId)
+        .order("created_at");
 
+      if (error) throw error;
+      const comps = data ?? [];
+      cacheSet(CACHE.companies, comps);
+      return comps;
+    } catch {
+      // Offline — use cache
+      return cacheGet<Company[]>(CACHE.companies) ?? [];
+    }
+  }, []);
+
+  // Restore session on mount
   useEffect(() => {
-    const auth = loadAuth();
-    if (auth?.username) {
-      setIsAuthenticated(true);
-      setUsername(auth.username);
-      setDisplayName(auth.displayName);
+    const cached = cacheGet<Session>(CACHE.session);
+    if (cached?.id) {
+      setSession(cached);
 
-      const comps = loadUserCompanies(auth.username);
-      setUserCompanies(comps);
+      // Load companies (try Supabase, fallback cache)
+      fetchCompanies(cached.id).then((comps) => {
+        setCompanies(comps);
+        const activeId = cacheGet<string>(CACHE.activeCompany);
+        if (activeId) {
+          const active = comps.find((c) => c.id === activeId);
+          if (active) setActiveCompany(active);
+        }
+        setLoaded(true);
+      });
+    } else {
+      setLoaded(true);
+    }
+  }, [fetchCompanies]);
 
-      const activeId = loadActiveCompanyId();
-      if (activeId) {
-        const active = comps.find((c) => c.id === activeId);
-        if (active) setActiveCompany(active);
+  const login = useCallback(async (user: string, pass: string): Promise<{ success: boolean; error?: string }> => {
+    const supabase = createClient();
+
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("id, username, password, display_name")
+        .eq("username", user.toLowerCase())
+        .single();
+
+      if (error || !data) return { success: false, error: "Usuario no encontrado" };
+      if (data.password !== pass) return { success: false, error: "Contraseña incorrecta" };
+
+      // Cache user for offline login
+      const cachedUsers = cacheGet<CachedUser[]>(CACHE.users) ?? [];
+      const idx = cachedUsers.findIndex((u) => u.username === data.username);
+      const cachedUser: CachedUser = { id: data.id, username: data.username, password: data.password, display_name: data.display_name };
+      if (idx >= 0) cachedUsers[idx] = cachedUser;
+      else cachedUsers.push(cachedUser);
+      cacheSet(CACHE.users, cachedUsers);
+
+      const sess: Session = { id: data.id, username: data.username, displayName: data.display_name };
+      setSession(sess);
+      cacheSet(CACHE.session, sess);
+
+      const comps = await fetchCompanies(data.id);
+      setCompanies(comps);
+
+      if (comps.length === 1) {
+        setActiveCompany(comps[0]);
+        cacheSet(CACHE.activeCompany, comps[0].id);
       }
+
+      return { success: true };
+    } catch {
+      // Offline — try cached users
+      const cachedUsers = cacheGet<CachedUser[]>(CACHE.users) ?? [];
+      const found = cachedUsers.find((u) => u.username === user.toLowerCase() && u.password === pass);
+      if (!found) return { success: false, error: "Sin conexión y usuario no encontrado en cache" };
+
+      const sess: Session = { id: found.id, username: found.username, displayName: found.display_name };
+      setSession(sess);
+      cacheSet(CACHE.session, sess);
+
+      const comps = cacheGet<Company[]>(CACHE.companies)?.filter((c) => c.owner_id === found.id) ?? [];
+      setCompanies(comps);
+
+      if (comps.length === 1) {
+        setActiveCompany(comps[0]);
+        cacheSet(CACHE.activeCompany, comps[0].id);
+      }
+
+      return { success: true };
     }
-    // Ensure default users exist
-    loadUsers();
-    setLoaded(true);
-  }, []);
+  }, [fetchCompanies]);
 
-  const login = useCallback((user: string, pass: string): boolean => {
-    const users = loadUsers();
-    const found = users.find((u) => u.username.toLowerCase() === user.toLowerCase() && u.password === pass);
-    if (!found) return false;
-
-    setIsAuthenticated(true);
-    setUsername(found.username);
-    setDisplayName(found.displayName);
-    localStorage.setItem(AUTH_KEY, JSON.stringify({ username: found.username, displayName: found.displayName }));
-
-    const comps = loadUserCompanies(found.username);
-    setUserCompanies(comps);
-
-    // Auto-select if only one company
-    if (comps.length === 1) {
-      setActiveCompany(comps[0]);
-      localStorage.setItem(ACTIVE_COMPANY_KEY, comps[0].id);
-    }
-
-    return true;
-  }, []);
-
-  const register = useCallback((user: string, pass: string, name: string): { success: boolean; error?: string } => {
+  const register = useCallback(async (user: string, pass: string, name: string): Promise<{ success: boolean; error?: string }> => {
     if (!user.trim() || !pass.trim() || !name.trim()) return { success: false, error: "Todos los campos son requeridos" };
     if (pass.length < 4) return { success: false, error: "La contraseña debe tener al menos 4 caracteres" };
 
-    const users = loadUsers();
-    if (users.some((u) => u.username.toLowerCase() === user.toLowerCase())) {
-      return { success: false, error: "Este usuario ya existe" };
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("users")
+        .insert({ username: user.toLowerCase(), password: pass, display_name: name })
+        .select("id, username, display_name")
+        .single();
+
+      if (error) {
+        if (error.code === "23505") return { success: false, error: "Este usuario ya existe" };
+        return { success: false, error: error.message };
+      }
+
+      const sess: Session = { id: data.id, username: data.username, displayName: data.display_name };
+      setSession(sess);
+      cacheSet(CACHE.session, sess);
+      setCompanies([]);
+      cacheSet(CACHE.companies, []);
+
+      return { success: true };
+    } catch {
+      return { success: false, error: "Sin conexión. Necesitas internet para registrarte." };
     }
-
-    const newUser: UserAccount = { username: user.toLowerCase(), password: pass, displayName: name, createdAt: new Date().toISOString() };
-    users.push(newUser);
-    saveUsers(users);
-
-    setIsAuthenticated(true);
-    setUsername(newUser.username);
-    setDisplayName(newUser.displayName);
-    localStorage.setItem(AUTH_KEY, JSON.stringify({ username: newUser.username, displayName: newUser.displayName }));
-
-    setUserCompanies([]);
-    return { success: true };
   }, []);
 
   const logout = useCallback(() => {
-    setIsAuthenticated(false);
-    setUsername(null);
-    setDisplayName(null);
+    setSession(null);
     setActiveCompany(null);
-    setUserCompanies([]);
-    localStorage.removeItem(AUTH_KEY);
-    localStorage.removeItem(ACTIVE_COMPANY_KEY);
+    setCompanies([]);
+    cacheRemove(CACHE.session);
+    cacheRemove(CACHE.activeCompany);
   }, []);
 
-  const addCompany = useCallback((name: string): Company => {
-    if (!username) throw new Error("Not authenticated");
-    const company: Company = { id: crypto.randomUUID(), name, owner: username, createdAt: new Date().toISOString() };
+  const addCompany = useCallback(async (name: string): Promise<Company> => {
+    if (!session) throw new Error("No autenticado");
 
-    const all = loadAllCompanies();
-    all.push(company);
-    saveAllCompanies(all);
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("companies")
+      .insert({ name, owner_id: session.id })
+      .select("id, name, owner_id, created_at")
+      .single();
 
-    const comps = all.filter((c) => c.owner === username);
-    setUserCompanies(comps);
+    if (error) throw error;
 
-    return company;
-  }, [username]);
+    const comps = await fetchCompanies(session.id);
+    setCompanies(comps);
+
+    return data;
+  }, [session, fetchCompanies]);
 
   const selectCompany = useCallback((id: string) => {
-    const company = userCompanies.find((c) => c.id === id);
+    const company = companies.find((c) => c.id === id);
     if (company) {
       setActiveCompany(company);
-      localStorage.setItem(ACTIVE_COMPANY_KEY, id);
+      cacheSet(CACHE.activeCompany, id);
     }
-  }, [userCompanies]);
+  }, [companies]);
 
-  const deleteCompany = useCallback((id: string) => {
-    const all = loadAllCompanies().filter((c) => c.id !== id);
-    saveAllCompanies(all);
+  const deleteCompany = useCallback(async (id: string) => {
+    const supabase = createClient();
+    await supabase.from("companies").delete().eq("id", id);
 
-    const comps = all.filter((c) => c.owner === username);
-    setUserCompanies(comps);
+    if (session) {
+      const comps = await fetchCompanies(session.id);
+      setCompanies(comps);
 
-    if (activeCompany?.id === id) {
-      const next = comps[0] || null;
-      setActiveCompany(next);
-      if (next) localStorage.setItem(ACTIVE_COMPANY_KEY, next.id);
-      else localStorage.removeItem(ACTIVE_COMPANY_KEY);
+      if (activeCompany?.id === id) {
+        const next = comps[0] ?? null;
+        setActiveCompany(next);
+        if (next) cacheSet(CACHE.activeCompany, next.id);
+        else cacheRemove(CACHE.activeCompany);
+      }
     }
-  }, [username, activeCompany]);
+  }, [session, activeCompany, fetchCompanies]);
 
   if (!loaded) return null;
 
   return (
     <AuthContext.Provider value={{
-      isAuthenticated, username, displayName, activeCompany,
-      companies: userCompanies,
+      isAuthenticated: !!session,
+      userId: session?.id ?? null,
+      username: session?.username ?? null,
+      displayName: session?.displayName ?? null,
+      activeCompany,
+      companies,
       login, register, logout, addCompany, selectCompany, deleteCompany,
     }}>
       {children}
