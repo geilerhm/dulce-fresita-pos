@@ -46,6 +46,9 @@ export default function InventarioPage() {
   const [costMode, setCostMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editNumpadTarget, setEditNumpadTarget] = useState<"cost" | "min" | "stock">("cost");
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
+  const [supplierPrices, setSupplierPrices] = useState<{ supplier_id: string; supplier_name: string; price: number; presentation_qty: number }[]>([]);
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
 
   // Edit/New form
   const [form, setForm] = useState(EMPTY_INGREDIENT);
@@ -107,10 +110,21 @@ export default function InventarioPage() {
 
   function openView(ing: Ingredient) { setSelected(ing); setView("view"); }
 
-  function openAddStock(ing?: Ingredient) {
+  async function openAddStock(ing?: Ingredient) {
     const target = ing || selected;
     if (!target) return;
-    setSelected(target); setAddQty(0); setAddCost(0); setCostMode(false); setView("addStock");
+    setSelected(target); setAddQty(0); setAddCost(0); setCostMode(false); setSelectedSupplierId(null); setView("addStock");
+    // Fetch suppliers and their prices for this ingredient
+    const companyId = getActiveCompanyId();
+    const { data: sups } = await supabase.from("suppliers").select("id, name").eq("company_id", companyId).eq("active", true).order("name");
+    setSuppliers(sups ?? []);
+    const { data: sp } = await supabase.from("supplier_prices").select("supplier_id, price, presentation_qty, supplier:suppliers(name)").eq("ingredient_id", target.id).eq("company_id", companyId);
+    setSupplierPrices((sp ?? []).map((p: Record<string, unknown>) => ({
+      supplier_id: p.supplier_id as string,
+      supplier_name: (p.supplier as { name: string } | null)?.name ?? "",
+      price: p.price as number,
+      presentation_qty: p.presentation_qty as number,
+    })));
   }
 
   function openEdit(ing?: Ingredient) {
@@ -201,7 +215,7 @@ export default function InventarioPage() {
     if (!selected || addQty === 0) return;
     setSaving(true);
     await supabase.from("ingredients").update({ stock_quantity: selected.stock_quantity + addQty }).eq("id", selected.id);
-    await supabase.from("inventory_movements").insert({ ingredient_id: selected.id, type: "purchase", quantity: addQty, notes: addCost > 0 ? `Costo: ${formatCOP(addCost)}` : null, company_id: getActiveCompanyId() });
+    await supabase.from("inventory_movements").insert({ ingredient_id: selected.id, type: "purchase", quantity: addQty, notes: addCost > 0 ? `Costo: ${formatCOP(addCost)}` : null, supplier_id: selectedSupplierId, company_id: getActiveCompanyId() });
     if (addCost > 0 && addQty > 0) {
       const newCostPerUnit = Math.round(addCost / addQty);
       await supabase.from("ingredients").update({ cost_per_unit: newCostPerUnit }).eq("id", selected.id);
@@ -409,6 +423,34 @@ export default function InventarioPage() {
 
         {/* RIGHT — Numpad */}
         <div className="flex-1 overflow-auto p-6">
+          {/* Supplier selector */}
+          {suppliers.length > 0 && (
+            <div className="mb-4 max-w-sm">
+              <label className="text-xs font-bold text-default-500 uppercase tracking-wider mb-1.5 block">Proveedor</label>
+              <div className="flex flex-wrap gap-2">
+                {suppliers.map(sup => {
+                  const sp = supplierPrices.find(p => p.supplier_id === sup.id);
+                  const isSelected = selectedSupplierId === sup.id;
+                  return (
+                    <button key={sup.id}
+                      onClick={() => {
+                        setSelectedSupplierId(isSelected ? null : sup.id);
+                        if (!isSelected && sp && sp.presentation_qty > 0) {
+                          setAddCost(sp.price);
+                          setAddQty(sp.presentation_qty);
+                        }
+                      }}
+                      className={`h-10 px-4 rounded-xl text-sm font-bold transition-all active:scale-95
+                        ${isSelected ? "bg-primary text-white" : "bg-default-100 text-default-600 hover:bg-default-200"}`}>
+                      {sup.name}
+                      {sp && <span className="ml-1.5 text-[10px] font-normal opacity-75">{formatCOP(sp.price)}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Toggle: Cantidad / Costo */}
           <div className="flex gap-1 bg-default-100 rounded-xl p-1 mb-4 max-w-sm">
             <button onClick={() => setCostMode(false)} className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${!costMode ? "bg-white text-default-800 shadow-sm" : "text-default-400"}`}>

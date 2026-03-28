@@ -2,7 +2,6 @@
 
 import { useCart } from "@/contexts/CartContext";
 import { formatCOP } from "@/lib/utils/format";
-import { ScrollShadow } from "@heroui/react";
 import { Minus, Plus, Trash, ShoppingCart } from "@phosphor-icons/react";
 import { playRemove } from "@/lib/utils/sounds";
 import { useState } from "react";
@@ -57,7 +56,7 @@ export function Cart() {
         />
 
         {/* Items */}
-        <ScrollShadow className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto">
           {items.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full px-6">
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-default-50 mb-4">
@@ -115,7 +114,7 @@ export function Cart() {
               })}
             </div>
           )}
-        </ScrollShadow>
+        </div>
 
         {/* Footer */}
         {items.length > 0 && (

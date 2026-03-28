@@ -9,7 +9,7 @@ import { useCaja } from "@/contexts/CajaContext";
 import { useRouter } from "next/navigation";
 import { Wallet } from "@phosphor-icons/react";
 
-interface Category { id: string; name: string; slug: string; }
+interface Category { id: string; name: string; slug: string; icon?: string; }
 interface Product { id: string; ref: string; name: string; price: number; image_url?: string; icon?: string; category_slug?: string; }
 
 export default function POSPage() {
@@ -36,7 +36,7 @@ export default function POSPage() {
     if (!companyId) { setLoaded(true); return; }
 
     Promise.all([
-      supabase.from("categories").select("id, name, slug").eq("type", "product").eq("company_id", companyId).order("sort_order"),
+      supabase.from("categories").select("id, name, slug, icon").eq("type", "product").eq("company_id", companyId).order("sort_order"),
       supabase.from("products").select("id, ref, name, price, image_url, icon, category:categories(slug)").eq("active", true).eq("available_in_pos", true).eq("company_id", companyId).order("sort_order"),
     ]).then(([catRes, prodRes]) => {
       const cats = (catRes.data ?? []) as Category[];

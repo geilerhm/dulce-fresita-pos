@@ -3,8 +3,6 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: [
-      "@heroui/react",
-      "@heroui/theme",
       "@phosphor-icons/react",
       "lucide-react",
       "recharts",

@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, TextField, Input, Label } from "@heroui/react";
 import { Warning, Plus, Trash, Storefront, ArrowRight, SignOut } from "@phosphor-icons/react";
 import { Strawberry } from "@/lib/utils/fruit-icons";
 
@@ -110,47 +109,47 @@ export default function LoginPage() {
 
               {mode === "login" ? (
                 <div className="space-y-4">
-                  <TextField className="space-y-1.5">
-                    <Label className="text-xs font-bold text-default-500 uppercase tracking-wider">Usuario</Label>
-                    <Input value={username} onChange={(e) => { setUsername(e.target.value); setError(""); }}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Usuario</label>
+                    <inputvalue={username} onChange={(e) => { setUsername(e.target.value); setError(""); }}
                       onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                       placeholder="tu usuario" autoFocus
                       className="h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-base outline-none focus:border-primary transition-all w-full" />
-                  </TextField>
+                  </div>
 
-                  <TextField className="space-y-1.5">
-                    <Label className="text-xs font-bold text-default-500 uppercase tracking-wider">Contraseña</Label>
-                    <Input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Contraseña</label>
+                    <inputtype="password" value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }}
                       onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                       placeholder="tu contraseña"
                       className="h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-base outline-none focus:border-primary transition-all w-full" />
-                  </TextField>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <TextField className="space-y-1.5">
-                    <Label className="text-xs font-bold text-default-500 uppercase tracking-wider">Nombre completo</Label>
-                    <Input value={regName} onChange={(e) => { setRegName(e.target.value); setError(""); }}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Nombre completo</label>
+                    <inputvalue={regName} onChange={(e) => { setRegName(e.target.value); setError(""); }}
                       onKeyDown={(e) => e.key === "Enter" && handleRegister()}
                       placeholder="Ej: Alejandra Hipia" autoFocus
                       className="h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-base outline-none focus:border-primary transition-all w-full" />
-                  </TextField>
+                  </div>
 
-                  <TextField className="space-y-1.5">
-                    <Label className="text-xs font-bold text-default-500 uppercase tracking-wider">Usuario</Label>
-                    <Input value={regUser} onChange={(e) => { setRegUser(e.target.value.toLowerCase().replace(/\s/g, "")); setError(""); }}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Usuario</label>
+                    <inputvalue={regUser} onChange={(e) => { setRegUser(e.target.value.toLowerCase().replace(/\s/g, "")); setError(""); }}
                       onKeyDown={(e) => e.key === "Enter" && handleRegister()}
                       placeholder="sin espacios"
                       className="h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-base outline-none focus:border-primary transition-all w-full" />
-                  </TextField>
+                  </div>
 
-                  <TextField className="space-y-1.5">
-                    <Label className="text-xs font-bold text-default-500 uppercase tracking-wider">Contraseña</Label>
-                    <Input type="password" value={regPass} onChange={(e) => { setRegPass(e.target.value); setError(""); }}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Contraseña</label>
+                    <inputtype="password" value={regPass} onChange={(e) => { setRegPass(e.target.value); setError(""); }}
                       onKeyDown={(e) => e.key === "Enter" && handleRegister()}
                       placeholder="mínimo 4 caracteres"
                       className="h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-base outline-none focus:border-primary transition-all w-full" />
-                  </TextField>
+                  </div>
                 </div>
               )}
 
@@ -178,8 +177,8 @@ export default function LoginPage() {
               {companies.length > 0 && (
                 <div className="space-y-2">
                   {companies.map((company) => (
-                    <Card key={company.id} className="hover:shadow-md transition-all">
-                      <CardContent className="flex items-center gap-3 p-4">
+                    <div key={company.id} className="rounded-2xl border border-default-100 bg-white hover:shadow-md transition-all">
+                      <div className="flex items-center gap-3 p-4">
                         <button onClick={() => handleSelectCompany(company.id)} className="flex-1 flex items-center gap-3 text-left">
                           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary shrink-0">
                             <Storefront size={24} weight="duotone" />
@@ -194,16 +193,16 @@ export default function LoginPage() {
                           className="flex h-10 w-10 items-center justify-center rounded-xl text-default-300 hover:text-red-500 hover:bg-red-50 transition-all shrink-0">
                           <Trash size={16} weight="bold" />
                         </button>
-                      </CardContent>
-                    </Card>
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
 
-              <TextField className="space-y-1.5">
-                <Label className="text-xs font-bold text-default-500 uppercase tracking-wider">Nueva empresa</Label>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Nueva empresa</label>
                 <div className="flex gap-2">
-                  <Input value={newCompanyName} onChange={(e) => setNewCompanyName(e.target.value)}
+                  <inputvalue={newCompanyName} onChange={(e) => setNewCompanyName(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleAddCompany()}
                     placeholder="Nombre de tu empresa..."
                     className="flex-1 h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-sm outline-none focus:border-primary transition-all" />
@@ -212,7 +211,7 @@ export default function LoginPage() {
                     <Plus size={18} weight="bold" /> Crear
                   </button>
                 </div>
-              </TextField>
+              </div>
 
               <button onClick={() => { logout(); setStep("auth"); }}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-default-400 hover:text-red-500 hover:bg-red-50 transition-all">

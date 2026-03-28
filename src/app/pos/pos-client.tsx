@@ -7,12 +7,12 @@ import { ProductGrid } from "@/components/pos/ProductGrid";
 import { Cart, FloatingCartButton } from "@/components/pos/Cart";
 import { SearchBar } from "@/components/pos/SearchBar";
 import { VirtualKeyboard } from "@/components/pos/VirtualKeyboard";
-import { ToastProvider } from "@heroui/react";
 
 interface Category {
   id: string;
   name: string;
   slug: string;
+  icon?: string;
 }
 
 interface Product {
@@ -84,7 +84,6 @@ export function POSClient({ categories, products }: POSClientProps) {
 
   return (
     <CartProvider>
-      <ToastProvider placement="top" />
       <div className="flex h-full">
         {/* Products area */}
         <div className="flex flex-1 flex-col overflow-hidden">

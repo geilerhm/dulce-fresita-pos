@@ -8,7 +8,6 @@ import { formatCOP } from "@/lib/utils/format";
 import { NumericKeypad } from "@/components/ui/NumericKeypad";
 import { playSuccess, playAdd, playRemove } from "@/lib/utils/sounds";
 import { toast } from "sonner";
-import { ScrollShadow } from "@heroui/react";
 import {
   MagnifyingGlass,
   Plus,
@@ -671,7 +670,7 @@ export default function ProductosPage() {
         </div>
 
         {/* CENTER — Form fields */}
-        <ScrollShadow className="flex-1 overflow-auto p-6 border-r border-default-100">
+        <div className="flex-1 overflow-auto p-6 border-r border-default-100">
           <div className="max-w-md space-y-6">
             {/* Name */}
             <TextInputWithKeyboard
@@ -734,7 +733,7 @@ export default function ProductosPage() {
               <NumericKeypad value={form.price} onChange={(n) => setForm((f) => ({ ...f, price: n }))} label="Precio del producto" />
             </div>
           </div>
-        </ScrollShadow>
+        </div>
 
         {/* RIGHT — Tabs: Icono & Estado / Receta */}
         <div className="flex-1 flex flex-col bg-white">
@@ -753,7 +752,7 @@ export default function ProductosPage() {
             </button>
           </div>
 
-          <ScrollShadow className="flex-1 overflow-auto p-5 space-y-4">
+          <div className="flex-1 overflow-auto p-5 space-y-4">
             {rightTab === "icon" ? (
               <>
                 {/* Icon picker */}
@@ -917,7 +916,7 @@ export default function ProductosPage() {
                 )}
               </>
             )}
-          </ScrollShadow>
+          </div>
         </div>
 
         {/* Delete confirmation */}

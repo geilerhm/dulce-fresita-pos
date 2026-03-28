@@ -1,7 +1,6 @@
 "use client";
 
 import { ProductCard } from "./ProductCard";
-import { ScrollShadow } from "@heroui/react";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 
 interface Product {
@@ -30,7 +29,7 @@ export function ProductGrid({ products, onProductAdded }: ProductGridProps) {
   }
 
   return (
-    <ScrollShadow className="h-full p-4">
+    <div className="h-full p-4 overflow-auto">
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4">
         {products.map((product) => (
           <ProductCard
@@ -45,6 +44,6 @@ export function ProductGrid({ products, onProductAdded }: ProductGridProps) {
           />
         ))}
       </div>
-    </ScrollShadow>
+    </div>
   );
 }

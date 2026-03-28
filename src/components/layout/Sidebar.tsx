@@ -17,6 +17,7 @@ import {
   WifiSlash,
   CloudArrowUp,
   SquaresFour,
+  Truck,
 } from "@phosphor-icons/react";
 import { useOfflineSync } from "@/lib/hooks/useOffline";
 import { useCaja } from "@/contexts/CajaContext";
@@ -30,6 +31,7 @@ const NAV_TOP = [
   { href: "/productos", label: "Productos", Icon: Tag },
   { href: "/inventario", label: "Inventario", Icon: Package },
   { href: "/categorias", label: "Categorías", Icon: SquaresFour },
+  { href: "/proveedores", label: "Proveedores", Icon: Truck },
 ];
 
 const NAV_BOTTOM = [

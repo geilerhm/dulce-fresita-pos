@@ -20,7 +20,6 @@ Dulce Fresita is a Spanish-language POS (Point of Sale) and inventory management
 ### Tech Stack
 - **Next.js 16** (App Router) + React 19 + TypeScript
 - **Supabase** for database (auth is localStorage-based, not Supabase Auth)
-- **HeroUI** (@heroui/react) as the primary component library with custom theme
 - **Tailwind CSS v4** with `@tailwindcss/postcss`
 - **shadcn/ui** components in `src/components/ui/`
 - **Framer Motion** for animations
@@ -55,7 +54,7 @@ Dulce Fresita is a Spanish-language POS (Point of Sale) and inventory management
 `scripts/setup-db.js` creates the Supabase schema and `scripts/seed.js` seeds sample data. These run directly against the database.
 
 ### Styling
-HeroUI theme is configured in `tailwind.config.ts` with a custom pink primary color (`#e84c65`). The app uses both HeroUI components and shadcn/ui components — check which library a component comes from before modifying.
+Custom pink primary color (`#e84c65`) is configured in `tailwind.config.ts`. The app uses shadcn/ui components and plain Tailwind CSS for styling.
 
 ### Conventions
 - All UI text is in **Spanish**

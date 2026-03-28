@@ -1,35 +1,13 @@
 "use client";
 
-import {
-  OrangeSlice,
-  Coffee,
-  Bread,
-  Cookie,
-  PintGlass,
-  ForkKnife,
-  Sparkle,
-  Cheese,
-  PlusCircle,
-  GridFour,
-} from "@phosphor-icons/react";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const CATEGORY_ICON_MAP: Record<string, any> = {
-  "frutas-venta": OrangeSlice,
-  "bebidas-venta": PintGlass,
-  "waffles-venta": GridFour,
-  "crepas-venta": Cookie,
-  "malteadas-venta": Coffee,
-  "obleas-venta": Bread,
-  "especiales-venta": Sparkle,
-  "salado-venta": Cheese,
-  "extras-venta": PlusCircle,
-};
+import { ForkKnife } from "@phosphor-icons/react";
+import { ProductIcon } from "@/lib/utils/product-icons";
 
 interface Category {
   id: string;
   name: string;
   slug: string;
+  icon?: string;
 }
 
 interface CategoryTabsProps {
@@ -56,7 +34,6 @@ export function CategoryTabs({ categories, selected, onSelect }: CategoryTabsPro
 
       {categories.map((cat) => {
         const isActive = selected === cat.slug;
-        const Icon = CATEGORY_ICON_MAP[cat.slug] || Sparkle;
 
         return (
           <button
@@ -68,7 +45,7 @@ export function CategoryTabs({ categories, selected, onSelect }: CategoryTabsPro
                 : "bg-default-50 text-default-400 border border-default-100 hover:bg-default-100 hover:text-default-600"
               }`}
           >
-            <Icon size={24} weight={isActive ? "fill" : "duotone"} />
+            <ProductIcon name={cat.icon || "SquaresFour"} size={24} weight={isActive ? "fill" : "duotone"} />
             <span className="text-[10px] font-bold leading-none">{cat.name}</span>
           </button>
         );

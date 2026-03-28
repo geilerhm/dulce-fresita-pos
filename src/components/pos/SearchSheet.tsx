@@ -6,7 +6,6 @@ import { useCart } from "@/contexts/CartContext";
 import { playAdd } from "@/lib/utils/sounds";
 import { ProductIcon } from "@/lib/utils/product-icons";
 import { ArrowLeft } from "@phosphor-icons/react";
-import { ScrollShadow } from "@heroui/react";
 
 interface Product {
   id: string;
@@ -80,7 +79,7 @@ export function SearchView({ products, onClose, onFilter }: SearchViewProps) {
         )}
       </div>
 
-      <ScrollShadow className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto">
         {/* Letter grid — shown when no letter is selected */}
         {!activeLetter && (
           <div className="p-5">
@@ -140,7 +139,7 @@ export function SearchView({ products, onClose, onFilter }: SearchViewProps) {
             )}
           </div>
         )}
-      </ScrollShadow>
+      </div>
     </div>
   );
 }
