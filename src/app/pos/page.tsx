@@ -5,6 +5,9 @@ import { createClient } from "@/lib/supabase/client";
 import { useEffect, useState } from "react";
 import { getCachedProducts, getCachedCategories, cacheProducts, cacheCategories, useOnlineStatus } from "@/lib/hooks/useOffline";
 import { getActiveCompanyId } from "@/lib/supabase/company";
+import { useCaja } from "@/contexts/CajaContext";
+import { useRouter } from "next/navigation";
+import { Wallet } from "@phosphor-icons/react";
 
 interface Category { id: string; name: string; slug: string; }
 interface Product { id: string; ref: string; name: string; price: number; image_url?: string; icon?: string; category_slug?: string; }
@@ -14,6 +17,8 @@ export default function POSPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loaded, setLoaded] = useState(false);
   const online = useOnlineStatus();
+  const { register, loading: cajaLoading } = useCaja();
+  const router = useRouter();
 
   useEffect(() => {
     // 1. Always load cache first (instant)
@@ -50,10 +55,29 @@ export default function POSPage() {
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!loaded) {
+  if (!loaded || cajaLoading) {
     return (
       <div className="flex h-full items-center justify-center bg-gray-50">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!register) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center bg-gray-50 gap-4">
+        <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10">
+          <Wallet size={40} weight="duotone" className="text-primary" />
+        </div>
+        <h2 className="text-xl font-bold text-default-800">Caja cerrada</h2>
+        <p className="text-sm text-default-400 text-center max-w-xs">Abre la caja antes de vender para registrar todas las transacciones</p>
+        <button
+          onClick={() => router.push("/caja")}
+          className="h-14 px-8 rounded-2xl bg-primary text-white text-base font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all flex items-center gap-2"
+        >
+          <Wallet size={20} weight="bold" />
+          Abrir Caja
+        </button>
       </div>
     );
   }

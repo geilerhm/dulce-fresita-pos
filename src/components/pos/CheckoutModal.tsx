@@ -40,7 +40,7 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("efectivo");
   const [receivedAmount, setReceivedAmount] = useState(0);
   const [processing, setProcessing] = useState(false);
-  const [success, setSuccess] = useState<{ saleId: string; saleNumber: number; total: number } | null>(null);
+  const [success, setSuccess] = useState<{ saleId: string; saleNumber: number; total: number; change: number } | null>(null);
   const [showVoid, setShowVoid] = useState(false);
 
   const change = receivedAmount - total;
@@ -76,6 +76,10 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
 
   const handleConfirm = useCallback(async () => {
     if (items.length === 0 || processing) return;
+    if (paymentMethod === "efectivo" && receivedAmount < total) {
+      toast.error(`Faltan ${formatCOP(total - receivedAmount)} para completar el pago`);
+      return;
+    }
     setProcessing(true);
 
     const saleItems = items.map((item) => ({
@@ -95,7 +99,7 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
       });
       playSuccess();
       clear();
-      setSuccess({ saleId: "offline", saleNumber: Math.floor(Math.random() * 9000) + 1000, total });
+      setSuccess({ saleId: "offline", saleNumber: Math.floor(Math.random() * 9000) + 1000, total, change: receivedAmount - total });
       setTimeout(() => { setSuccess(null); onClose(); }, 2000);
       setProcessing(false);
       return;
@@ -119,7 +123,7 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
 
       playSuccess();
       clear();
-      setSuccess({ saleId: sale.id, saleNumber: sale.sale_number, total });
+      setSuccess({ saleId: sale.id, saleNumber: sale.sale_number, total, change: receivedAmount - total });
       setTimeout(() => { setSuccess(null); onClose(); }, 2000);
     } catch (error) {
       // If online request fails, queue it offline
@@ -135,11 +139,11 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
       playSuccess();
       toast.warning("Sin conexión — venta guardada para sincronizar");
       clear();
-      setSuccess({ saleId: "queued", saleNumber: Math.floor(Math.random() * 9000) + 1000, total });
+      setSuccess({ saleId: "queued", saleNumber: Math.floor(Math.random() * 9000) + 1000, total, change: receivedAmount - total });
       setTimeout(() => { setSuccess(null); onClose(); }, 2000);
     }
     finally { setProcessing(false); }
-  }, [items, total, paymentMethod, processing, clear, onClose, register, online]);
+  }, [items, total, paymentMethod, processing, clear, onClose, register, online, receivedAmount]);
 
   if (!isOpen) return null;
 
@@ -154,8 +158,8 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
             </div>
             <p className="text-3xl font-bold text-default-800">Venta #{success.saleNumber}</p>
             <p className="text-4xl font-extrabold text-emerald-600 tabular-nums">{formatCOP(success.total)}</p>
-            {paymentMethod === "efectivo" && receivedAmount > 0 && change > 0 && (
-              <p className="text-xl text-default-500 tabular-nums">Cambio: {formatCOP(change)}</p>
+            {success.change > 0 && (
+              <p className="text-xl text-default-500 tabular-nums">Cambio: {formatCOP(success.change)}</p>
             )}
           </div>
         </div>

@@ -11,7 +11,6 @@ import {
   Package,
   Tag,
   GearSix,
-  FlowerLotus,
   ArrowsOut,
   ArrowsIn,
   WifiHigh,
@@ -23,6 +22,7 @@ import { useOfflineSync } from "@/lib/hooks/useOffline";
 import { useCaja } from "@/contexts/CajaContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { SignOut } from "@phosphor-icons/react";
+import { Strawberry } from "@/lib/utils/fruit-icons";
 
 const NAV_TOP = [
   { href: "/pos", label: "Vender", Icon: Storefront },
@@ -70,7 +70,7 @@ export function Sidebar() {
     <aside className="flex h-screen w-[72px] flex-col items-center border-r border-default-100 bg-white py-4">
       <Link href="/pos" className="mb-5 group">
         <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-pink-400 shadow-md shadow-primary/25 group-hover:shadow-lg group-hover:shadow-primary/30 transition-shadow">
-          <FlowerLotus size={22} weight="fill" className="text-white" />
+          <Strawberry size={22} className="text-white" />
         </div>
       </Link>
 

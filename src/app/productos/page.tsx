@@ -1170,14 +1170,15 @@ function IconPicker({ selected, onSelect }: { selected: string; onSelect: (icon:
             <button
               key={iconName}
               onClick={() => onSelect(iconName)}
-              className={`flex items-center justify-center h-14 rounded-xl transition-all active:scale-90
+              className={`flex flex-col items-center justify-center gap-1 h-[72px] rounded-xl transition-all active:scale-90
                 ${selected === iconName
                   ? "bg-primary/10 text-primary ring-2 ring-primary"
                   : "bg-white text-default-400 hover:bg-default-100 hover:text-default-600 border border-default-100"
                 }`}
               title={iconName}
             >
-              <ProductIcon name={iconName} size={26} weight={selected === iconName ? "fill" : "duotone"} />
+              <ProductIcon name={iconName} size={24} weight={selected === iconName ? "fill" : "duotone"} />
+              <span className={`text-[9px] leading-none truncate w-full text-center ${selected === iconName ? "text-primary font-bold" : "text-default-400"}`}>{iconName}</span>
             </button>
           ))}
         </div>

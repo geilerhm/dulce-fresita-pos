@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, TextField, Input, Label } from "@heroui/react";
-import { FlowerLotus, Warning, Plus, Trash, Storefront, ArrowRight, SignOut } from "@phosphor-icons/react";
+import { Warning, Plus, Trash, Storefront, ArrowRight, SignOut } from "@phosphor-icons/react";
+import { Strawberry } from "@/lib/utils/fruit-icons";
 
 export default function LoginPage() {
   const { login, register, logout, isAuthenticated, companies, activeCompany, addCompany, selectCompany, deleteCompany } = useAuth();
@@ -75,7 +76,7 @@ export default function LoginPage() {
         </div>
         <div className="relative z-10 text-center">
           <div className="flex h-24 w-24 items-center justify-center rounded-3xl bg-white/20 backdrop-blur-sm mx-auto mb-8 shadow-2xl">
-            <FlowerLotus size={52} weight="fill" className="text-white" />
+            <Strawberry size={52} className="text-white" />
           </div>
           <h1 className="text-4xl font-extrabold text-white mb-3">Dulce Fresita</h1>
           <p className="text-lg text-white/80 max-w-xs">Punto de venta diseñado para tu negocio</p>
@@ -88,7 +89,7 @@ export default function LoginPage() {
           {/* Mobile logo */}
           <div className="flex flex-col items-center mb-8 lg:hidden">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-pink-400 shadow-lg shadow-primary/25 mb-3">
-              <FlowerLotus size={28} weight="fill" className="text-white" />
+              <Strawberry size={28} className="text-white" />
             </div>
             <h1 className="text-xl font-extrabold text-default-900">Dulce Fresita</h1>
           </div>
