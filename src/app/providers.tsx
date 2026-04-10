@@ -11,7 +11,19 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <AuthGate>
         <CajaProvider>
           {children}
-          <Toaster position="top-center" richColors />
+          <Toaster
+            position="top-center"
+            richColors
+            toastOptions={{
+              style: {
+                fontSize: "1.25rem",
+                padding: "20px 24px",
+                borderRadius: "20px",
+                minHeight: "68px",
+                lineHeight: "1.4",
+              },
+            }}
+          />
         </CajaProvider>
       </AuthGate>
     </AuthProvider>

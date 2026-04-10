@@ -2,6 +2,7 @@
 
 import { ForkKnife } from "@phosphor-icons/react";
 import { ProductIcon } from "@/lib/utils/product-icons";
+import { playClick } from "@/lib/utils/sounds";
 
 interface Category {
   id: string;
@@ -21,7 +22,7 @@ export function CategoryTabs({ categories, selected, onSelect }: CategoryTabsPro
     <div className="flex flex-wrap gap-1.5">
       {/* "Todos" */}
       <button
-        onClick={() => onSelect(null)}
+        onClick={() => { onSelect(null); playClick(); }}
         className={`flex flex-col items-center justify-center gap-1 rounded-2xl w-[76px] h-[76px] transition-all duration-150 active:scale-95 select-none
           ${selected === null
             ? "bg-primary text-white shadow-lg shadow-primary/20"
@@ -38,7 +39,7 @@ export function CategoryTabs({ categories, selected, onSelect }: CategoryTabsPro
         return (
           <button
             key={cat.id}
-            onClick={() => onSelect(cat.slug)}
+            onClick={() => { onSelect(cat.slug); playClick(); }}
             className={`flex flex-col items-center justify-center gap-1 rounded-2xl w-[76px] h-[76px] transition-all duration-150 active:scale-95 select-none
               ${isActive
                 ? "bg-primary text-white shadow-lg shadow-primary/20"

@@ -1,20 +1,13 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@/lib/db/client";
 
 interface Company {
   id: string;
   name: string;
   owner_id: string;
   created_at: string;
-}
-
-interface CachedUser {
-  id: string;
-  username: string;
-  password: string;
-  display_name: string;
 }
 
 interface Session {
@@ -38,13 +31,8 @@ interface AuthContextValue {
   deleteCompany: (id: string) => Promise<void>;
 }
 
-// localStorage keys — only used as offline cache
-const CACHE = {
-  session: "dulce-fresita-session",
-  users: "dulce-fresita-users-cache",
-  companies: "dulce-fresita-companies-cache",
-  activeCompany: "dulce-fresita-active-company",
-};
+const SESSION_KEY = "dulce-fresita-session";
+const ACTIVE_COMPANY_KEY = "dulce-fresita-active-company";
 
 function cacheSet(key: string, value: unknown) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
@@ -69,36 +57,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [activeCompany, setActiveCompany] = useState<Company | null>(null);
   const [loaded, setLoaded] = useState(false);
 
-  // Fetch companies from Supabase for a given user, cache them
   const fetchCompanies = useCallback(async (userId: string): Promise<Company[]> => {
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("companies")
-        .select("id, name, owner_id, created_at")
-        .eq("owner_id", userId)
-        .order("created_at");
+    const client = createClient();
+    const { data, error } = await client
+      .from("companies")
+      .select("id, name, owner_id, created_at")
+      .eq("owner_id", userId)
+      .order("created_at");
 
-      if (error) throw error;
-      const comps = data ?? [];
-      cacheSet(CACHE.companies, comps);
-      return comps;
-    } catch {
-      // Offline — use cache
-      return cacheGet<Company[]>(CACHE.companies) ?? [];
-    }
+    if (error) return [];
+    return data ?? [];
   }, []);
 
   // Restore session on mount
   useEffect(() => {
-    const cached = cacheGet<Session>(CACHE.session);
+    const cached = cacheGet<Session>(SESSION_KEY);
     if (cached?.id) {
       setSession(cached);
 
-      // Load companies (try Supabase, fallback cache)
       fetchCompanies(cached.id).then((comps) => {
         setCompanies(comps);
-        const activeId = cacheGet<string>(CACHE.activeCompany);
+        const activeId = cacheGet<string>(ACTIVE_COMPANY_KEY);
         if (activeId) {
           const active = comps.find((c) => c.id === activeId);
           if (active) setActiveCompany(active);
@@ -111,103 +90,69 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchCompanies]);
 
   const login = useCallback(async (user: string, pass: string): Promise<{ success: boolean; error?: string }> => {
-    const supabase = createClient();
+    const client = createClient();
 
-    try {
-      const { data, error } = await supabase
-        .from("users")
-        .select("id, username, password, display_name")
-        .eq("username", user.toLowerCase())
-        .single();
+    const { data, error } = await client
+      .from("users")
+      .select("id, username, password, display_name")
+      .eq("username", user.toLowerCase())
+      .single();
 
-      if (error || !data) return { success: false, error: "Usuario no encontrado" };
-      if (data.password !== pass) return { success: false, error: "Contraseña incorrecta" };
+    if (error || !data) return { success: false, error: "Usuario no encontrado" };
+    if (data.password !== pass) return { success: false, error: "Contraseña incorrecta" };
 
-      // Cache user for offline login
-      const cachedUsers = cacheGet<CachedUser[]>(CACHE.users) ?? [];
-      const idx = cachedUsers.findIndex((u) => u.username === data.username);
-      const cachedUser: CachedUser = { id: data.id, username: data.username, password: data.password, display_name: data.display_name };
-      if (idx >= 0) cachedUsers[idx] = cachedUser;
-      else cachedUsers.push(cachedUser);
-      cacheSet(CACHE.users, cachedUsers);
+    const sess: Session = { id: data.id, username: data.username, displayName: data.display_name };
+    setSession(sess);
+    cacheSet(SESSION_KEY, sess);
 
-      const sess: Session = { id: data.id, username: data.username, displayName: data.display_name };
-      setSession(sess);
-      cacheSet(CACHE.session, sess);
+    const comps = await fetchCompanies(data.id);
+    setCompanies(comps);
 
-      const comps = await fetchCompanies(data.id);
-      setCompanies(comps);
-
-      if (comps.length === 1) {
-        setActiveCompany(comps[0]);
-        cacheSet(CACHE.activeCompany, comps[0].id);
-      }
-
-      return { success: true };
-    } catch {
-      // Offline — try cached users
-      const cachedUsers = cacheGet<CachedUser[]>(CACHE.users) ?? [];
-      const found = cachedUsers.find((u) => u.username === user.toLowerCase() && u.password === pass);
-      if (!found) return { success: false, error: "Sin conexión y usuario no encontrado en cache" };
-
-      const sess: Session = { id: found.id, username: found.username, displayName: found.display_name };
-      setSession(sess);
-      cacheSet(CACHE.session, sess);
-
-      const comps = cacheGet<Company[]>(CACHE.companies)?.filter((c) => c.owner_id === found.id) ?? [];
-      setCompanies(comps);
-
-      if (comps.length === 1) {
-        setActiveCompany(comps[0]);
-        cacheSet(CACHE.activeCompany, comps[0].id);
-      }
-
-      return { success: true };
+    if (comps.length === 1) {
+      setActiveCompany(comps[0]);
+      cacheSet(ACTIVE_COMPANY_KEY, comps[0].id);
     }
+
+    return { success: true };
   }, [fetchCompanies]);
 
   const register = useCallback(async (user: string, pass: string, name: string): Promise<{ success: boolean; error?: string }> => {
     if (!user.trim() || !pass.trim() || !name.trim()) return { success: false, error: "Todos los campos son requeridos" };
     if (pass.length < 4) return { success: false, error: "La contraseña debe tener al menos 4 caracteres" };
 
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("users")
-        .insert({ username: user.toLowerCase(), password: pass, display_name: name })
-        .select("id, username, display_name")
-        .single();
+    const client = createClient();
+    const { data, error } = await client
+      .from("users")
+      .insert({ username: user.toLowerCase(), password: pass, display_name: name })
+      .select("id, username, display_name")
+      .single();
 
-      if (error) {
-        if (error.code === "23505") return { success: false, error: "Este usuario ya existe" };
-        return { success: false, error: error.message };
-      }
-
-      const sess: Session = { id: data.id, username: data.username, displayName: data.display_name };
-      setSession(sess);
-      cacheSet(CACHE.session, sess);
-      setCompanies([]);
-      cacheSet(CACHE.companies, []);
-
-      return { success: true };
-    } catch {
-      return { success: false, error: "Sin conexión. Necesitas internet para registrarte." };
+    if (error) {
+      if (error.code === "23505") return { success: false, error: "Este usuario ya existe" };
+      return { success: false, error: error.message };
     }
+
+    const sess: Session = { id: data.id, username: data.username, displayName: data.display_name };
+    setSession(sess);
+    cacheSet(SESSION_KEY, sess);
+    setCompanies([]);
+
+    return { success: true };
   }, []);
 
   const logout = useCallback(() => {
     setSession(null);
     setActiveCompany(null);
     setCompanies([]);
-    cacheRemove(CACHE.session);
-    cacheRemove(CACHE.activeCompany);
+    cacheRemove(SESSION_KEY);
+    cacheRemove(ACTIVE_COMPANY_KEY);
   }, []);
 
   const addCompany = useCallback(async (name: string): Promise<Company> => {
     if (!session) throw new Error("No autenticado");
 
-    const supabase = createClient();
-    const { data, error } = await supabase
+    const client = createClient();
+    const { data, error } = await client
       .from("companies")
       .insert({ name, owner_id: session.id })
       .select("id, name, owner_id, created_at")
@@ -225,13 +170,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const company = companies.find((c) => c.id === id);
     if (company) {
       setActiveCompany(company);
-      cacheSet(CACHE.activeCompany, id);
+      cacheSet(ACTIVE_COMPANY_KEY, id);
     }
   }, [companies]);
 
   const deleteCompany = useCallback(async (id: string) => {
-    const supabase = createClient();
-    await supabase.from("companies").delete().eq("id", id);
+    const client = createClient();
+    await client.from("companies").delete().eq("id", id);
 
     if (session) {
       const comps = await fetchCompanies(session.id);
@@ -240,8 +185,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (activeCompany?.id === id) {
         const next = comps[0] ?? null;
         setActiveCompany(next);
-        if (next) cacheSet(CACHE.activeCompany, next.id);
-        else cacheRemove(CACHE.activeCompany);
+        if (next) cacheSet(ACTIVE_COMPANY_KEY, next.id);
+        else cacheRemove(ACTIVE_COMPANY_KEY);
       }
     }
   }, [session, activeCompany, fetchCompanies]);

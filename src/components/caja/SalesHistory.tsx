@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useCaja } from "@/contexts/CajaContext";
-import { createClient } from "@/lib/supabase/client";
-import { getActiveCompanyId } from "@/lib/supabase/company";
+import { createClient } from "@/lib/db/client";
+import { getActiveCompanyId } from "@/lib/db/company";
 import { formatCOP, formatTime } from "@/lib/utils/format";
 import { VoidSaleModal } from "./VoidSaleModal";
 import { Money, DeviceMobile, Receipt, Prohibit, ArrowsClockwise, CaretLeft, CaretRight, CalendarBlank } from "@phosphor-icons/react";
@@ -66,7 +66,7 @@ export function SalesHistory() {
     const { data } = await query;
     if (!data || data.length === 0) { setSales([]); setLoading(false); return; }
 
-    const saleIds = data.map((s) => s.id);
+    const saleIds = data.map((s: any) => s.id);
     const { data: allItems } = await supabase
       .from("sale_items")
       .select("sale_id, product_name, quantity, subtotal")
@@ -80,7 +80,7 @@ export function SalesHistory() {
       itemsMap.set(item.sale_id, list);
     }
 
-    setSales(data.map((sale) => ({ ...sale, items: itemsMap.get(sale.id) ?? [] })));
+    setSales(data.map((sale: any) => ({ ...sale, items: itemsMap.get(sale.id) ?? [] })));
     setLoading(false);
   }, [register, selectedDate]);
 

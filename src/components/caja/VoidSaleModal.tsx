@@ -3,10 +3,10 @@
 import { formatCOP } from "@/lib/utils/format";
 import { X, Check, WarningCircle } from "@phosphor-icons/react";
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { getActiveCompanyId } from "@/lib/supabase/company";
+import { createClient } from "@/lib/db/client";
+import { getActiveCompanyId } from "@/lib/db/company";
 import { playRemove } from "@/lib/utils/sounds";
-import { toast } from "sonner";
+import { toast } from "@/lib/utils/toast";
 
 interface VoidSaleModalProps {
   isOpen: boolean;

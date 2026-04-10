@@ -1,10 +1,9 @@
 "use client";
 
 import { POSClient } from "./pos-client";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@/lib/db/client";
 import { useEffect, useState } from "react";
-import { getCachedProducts, getCachedCategories, cacheProducts, cacheCategories, useOnlineStatus } from "@/lib/hooks/useOffline";
-import { getActiveCompanyId } from "@/lib/supabase/company";
+import { getActiveCompanyId } from "@/lib/db/company";
 import { useCaja } from "@/contexts/CajaContext";
 import { useRouter } from "next/navigation";
 import { Wallet } from "@phosphor-icons/react";
@@ -16,28 +15,17 @@ export default function POSPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const online = useOnlineStatus();
   const { register, loading: cajaLoading } = useCaja();
   const router = useRouter();
 
   useEffect(() => {
-    // 1. Always load cache first (instant)
-    const cachedCats = getCachedCategories() as Category[] | null;
-    const cachedProds = getCachedProducts() as Product[] | null;
-    if (cachedCats && cachedCats.length > 0) setCategories(cachedCats);
-    if (cachedProds && cachedProds.length > 0) setProducts(cachedProds);
-    if (cachedCats || cachedProds) setLoaded(true);
-
-    // 2. If online, fetch fresh data
-    if (!navigator.onLine) { setLoaded(true); return; }
-
-    const supabase = createClient();
+    const client = createClient();
     const companyId = getActiveCompanyId();
     if (!companyId) { setLoaded(true); return; }
 
     Promise.all([
-      supabase.from("categories").select("id, name, slug, icon").eq("type", "product").eq("company_id", companyId).order("sort_order"),
-      supabase.from("products").select("id, ref, name, price, image_url, icon, category:categories(slug)").eq("active", true).eq("available_in_pos", true).eq("company_id", companyId).order("sort_order"),
+      client.from("categories").select("id, name, slug, icon").eq("type", "product").eq("company_id", companyId).order("sort_order"),
+      client.from("products").select("id, ref, name, price, image_url, icon, category:categories(slug)").eq("active", true).eq("available_in_pos", true).eq("company_id", companyId).order("sort_order"),
     ]).then(([catRes, prodRes]) => {
       const cats = (catRes.data ?? []) as Category[];
       const prods = (prodRes.data ?? []).map((p: Record<string, unknown>) => ({
@@ -46,11 +34,10 @@ export default function POSPage() {
         category_slug: (p.category as { slug: string } | null)?.slug ?? undefined,
       }));
 
-      setCategories(cats); cacheCategories(cats);
-      setProducts(prods); cacheProducts(prods);
+      setCategories(cats);
+      setProducts(prods);
       setLoaded(true);
     }).catch(() => {
-      // fetch failed — cache is already loaded above
       setLoaded(true);
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -85,17 +72,8 @@ export default function POSPage() {
   if (products.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center bg-gray-50 text-default-400 gap-4">
-        {!online ? (
-          <>
-            <p className="text-lg font-bold text-default-600">Sin conexión</p>
-            <p className="text-sm">Conecta al internet y recarga</p>
-          </>
-        ) : (
-          <>
-            <p className="text-lg font-bold text-default-600">No hay productos</p>
-            <p className="text-sm text-center max-w-xs">Ve a Productos en el menú lateral para crear tus primeros productos</p>
-          </>
-        )}
+        <p className="text-lg font-bold text-default-600">No hay productos</p>
+        <p className="text-sm text-center max-w-xs">Ve a Productos en el menú lateral para crear tus primeros productos</p>
       </div>
     );
   }

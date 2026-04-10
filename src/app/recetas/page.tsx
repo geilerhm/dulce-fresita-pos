@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { getActiveCompanyId } from "@/lib/supabase/company";
+import { createClient } from "@/lib/db/client";
+import { getActiveCompanyId } from "@/lib/db/company";
 import { formatCOP } from "@/lib/utils/format";
 import { ProductIcon } from "@/lib/utils/product-icons";
 import { playAdd, playSuccess, playRemove } from "@/lib/utils/sounds";
-import { toast } from "sonner";
+import { toast } from "@/lib/utils/toast";
 import {
   MagnifyingGlass,
   ArrowLeft,
@@ -112,7 +112,7 @@ export default function RecetasPage() {
     }
     setRecipeCounts(counts);
     setLoading(false);
-  }, [supabase]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchProducts();
@@ -134,7 +134,7 @@ export default function RecetasPage() {
       setRecipeRows((data as unknown as RecipeRow[]) ?? []);
       setLoadingRecipe(false);
     },
-    [supabase]
+    [] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   /* ── Fetch all ingredients (for add panel) ── */
@@ -148,7 +148,7 @@ export default function RecetasPage() {
       .order("name");
 
     setIngredients((data as Ingredient[]) ?? []);
-  }, [supabase]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Open product detail ── */
   const openDetail = useCallback(
@@ -209,7 +209,7 @@ export default function RecetasPage() {
         },
       }));
     },
-    [supabase, selectedProduct]
+    [selectedProduct] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   /* ── Add ingredient to recipe ── */
@@ -268,7 +268,7 @@ export default function RecetasPage() {
         await recalcProductCost(selectedProduct.id);
       }
     },
-    [supabase, selectedProduct, fetchRecipe, recalcProductCost]
+    [selectedProduct, fetchRecipe, recalcProductCost] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   /* ── Filtered products ── */

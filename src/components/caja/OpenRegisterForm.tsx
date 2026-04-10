@@ -5,7 +5,7 @@ import { useCaja } from "@/contexts/CajaContext";
 import { formatCOP } from "@/lib/utils/format";
 import { Wallet, WarningCircle, Backspace } from "@phosphor-icons/react";
 import { playSuccess } from "@/lib/utils/sounds";
-import { toast } from "sonner";
+import { toast } from "@/lib/utils/toast";
 
 const QUICK_AMOUNTS = [0, 50000, 100000, 150000, 200000, 250000];
 
@@ -27,7 +27,6 @@ export function OpenRegisterForm() {
     setError(null);
     try {
       await openRegister(amount);
-      playSuccess();
       toast.success("Caja abierta");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al abrir caja");

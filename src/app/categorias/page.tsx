@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { getActiveCompanyId } from "@/lib/supabase/company";
+import { createClient } from "@/lib/db/client";
+import { getActiveCompanyId } from "@/lib/db/company";
 import { ProductIcon, ICON_CATEGORIES } from "@/lib/utils/product-icons";
-import { toast } from "sonner";
+import { toast } from "@/lib/utils/toast";
 import {
   Plus, PencilSimple, Trash, Check, X, CaretUp, CaretDown, SquaresFour, Lightning, ArrowLeft,
 } from "@phosphor-icons/react";
@@ -73,9 +73,9 @@ export default function CategoriasPage() {
       if (item.category_id) countMap[item.category_id] = (countMap[item.category_id] ?? 0) + 1;
     }
 
-    setCategories(cats.map((c) => ({ ...c, _count: countMap[c.id] ?? 0 })) as Category[]);
+    setCategories(cats.map((c: any) => ({ ...c, _count: countMap[c.id] ?? 0 })) as Category[]);
     setLoading(false);
-  }, [supabase]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchCategories(); }, [fetchCategories]);
 

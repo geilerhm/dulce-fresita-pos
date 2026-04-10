@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { getActiveCompanyId } from "@/lib/supabase/company";
+import { createClient } from "@/lib/db/client";
+import { getActiveCompanyId } from "@/lib/db/company";
 import { formatCOP } from "@/lib/utils/format";
 import { ProductIcon } from "@/lib/utils/product-icons";
 import {
@@ -71,15 +71,15 @@ export default function DashboardPage() {
         .gte("created_at", today);
 
       const sales = todaySales ?? [];
-      setTotalSales(sales.reduce((s, r) => s + (r.total ?? 0), 0));
+      setTotalSales(sales.reduce((s: any, r: any) => s + (r.total ?? 0), 0));
       setSalesCount(sales.length);
 
       const efectivo = sales
-        .filter((r) => r.payment_method === "efectivo")
-        .reduce((s, r) => s + (r.total ?? 0), 0);
+        .filter((r: any) => r.payment_method === "efectivo")
+        .reduce((s: any, r: any) => s + (r.total ?? 0), 0);
       const nequi = sales
-        .filter((r) => r.payment_method === "nequi")
-        .reduce((s, r) => s + (r.total ?? 0), 0);
+        .filter((r: any) => r.payment_method === "nequi")
+        .reduce((s: any, r: any) => s + (r.total ?? 0), 0);
 
       setNequiTotal(nequi);
 
@@ -113,7 +113,7 @@ export default function DashboardPage() {
         d.setDate(d.getDate() - 6 + i);
         dayMap[d.toISOString().split("T")[0]] = 0;
       }
-      (weekSales ?? []).forEach((s) => {
+      (weekSales ?? []).forEach((s: any) => {
         const d = s.created_at?.split("T")[0];
         if (d && d in dayMap) dayMap[d] += s.total ?? 0;
       });
@@ -137,7 +137,7 @@ export default function DashboardPage() {
         string,
         { product_name: string; product_id: string; total_qty: number; total_revenue: number }
       > = {};
-      (todayItems ?? []).forEach((item) => {
+      (todayItems ?? []).forEach((item: any) => {
         const key = item.product_id ?? item.product_name;
         if (!productMap[key]) {
           productMap[key] = {
@@ -156,7 +156,7 @@ export default function DashboardPage() {
         .slice(0, 5);
 
       // Fetch icons for those products
-      const productIds = sorted.map((p) => p.product_id).filter(Boolean);
+      const productIds = sorted.map((p: any) => p.product_id).filter(Boolean);
       let iconMap: Record<string, string> = {};
       if (productIds.length > 0) {
         const { data: prods } = await supabase
@@ -164,7 +164,7 @@ export default function DashboardPage() {
           .select("id, icon")
           .eq("company_id", companyId)
           .in("id", productIds);
-        (prods ?? []).forEach((p) => {
+        (prods ?? []).forEach((p: any) => {
           if (p.icon) iconMap[p.id] = p.icon;
         });
       }
@@ -187,7 +187,7 @@ export default function DashboardPage() {
         .gt("min_stock", 0);
 
       const alerts = (lowStockData ?? []).filter(
-        (i) => i.stock_quantity <= i.min_stock
+        (i: any) => i.stock_quantity <= i.min_stock
       );
       setLowStock(alerts);
 

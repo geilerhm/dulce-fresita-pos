@@ -15,11 +15,11 @@ import {
   ArrowsIn,
   WifiHigh,
   WifiSlash,
-  CloudArrowUp,
   SquaresFour,
   Truck,
 } from "@phosphor-icons/react";
-import { useOfflineSync } from "@/lib/hooks/useOffline";
+import { useOnlineStatus } from "@/lib/hooks/useOffline";
+import { playClick } from "@/lib/utils/sounds";
 import { useCaja } from "@/contexts/CajaContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { SignOut } from "@phosphor-icons/react";
@@ -51,6 +51,7 @@ export function Sidebar() {
       <Link
         key={item.href}
         href={item.href}
+        onClick={playClick}
         className={`relative flex flex-col items-center justify-center gap-1 h-14 w-full rounded-2xl transition-all duration-200 select-none
           ${isActive
             ? "bg-primary/10 text-primary"
@@ -124,17 +125,16 @@ function FullscreenButton() {
 }
 
 function OnlineIndicator() {
-  const { online, pendingCount, sync } = useOfflineSync();
+  const online = useOnlineStatus();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
 
-  // Avoid hydration mismatch — render neutral state until mounted
   if (!mounted) {
     return <div className="flex items-center justify-center h-10 w-full text-default-300"><WifiHigh size={16} weight="fill" /></div>;
   }
 
-  if (online && pendingCount === 0) {
+  if (online) {
     return (
       <div className="flex items-center justify-center h-10 w-full text-emerald-500" title="Conectado">
         <WifiHigh size={16} weight="fill" />
@@ -142,22 +142,10 @@ function OnlineIndicator() {
     );
   }
 
-  if (online && pendingCount > 0) {
-    return (
-      <button onClick={sync} title={`Sincronizando ${pendingCount} ventas`}
-        className="flex flex-col items-center justify-center gap-0.5 h-14 w-full rounded-2xl text-amber-500 bg-amber-50 hover:bg-amber-100 transition-all animate-pulse">
-        <CloudArrowUp size={18} weight="fill" />
-        <span className="text-[10px] font-bold leading-none">{pendingCount}</span>
-      </button>
-    );
-  }
-
   return (
-    <div className="flex flex-col items-center justify-center gap-0.5 h-14 w-full rounded-2xl text-red-500 bg-red-50" title="Sin conexión">
+    <div className="flex flex-col items-center justify-center gap-0.5 h-14 w-full rounded-2xl text-default-400" title="Base de datos local">
       <WifiSlash size={18} weight="fill" />
-      <span className="text-[10px] font-bold leading-none">
-        {pendingCount > 0 ? `${pendingCount}` : "Offline"}
-      </span>
+      <span className="text-[10px] font-bold leading-none">Local</span>
     </div>
   );
 }

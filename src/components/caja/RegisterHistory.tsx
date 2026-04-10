@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { getActiveCompanyId } from "@/lib/supabase/company";
+import { createClient } from "@/lib/db/client";
+import { getActiveCompanyId } from "@/lib/db/company";
 import { formatCOP, formatDate, formatTime } from "@/lib/utils/format";
 import { Clock, TrendUp, TrendDown, Minus, CheckCircle } from "@phosphor-icons/react";
 
@@ -39,7 +39,7 @@ export function RegisterHistory() {
       if (!registers || registers.length === 0) { setLoading(false); return; }
 
       // Batch: get all sales for these registers in one query
-      const regIds = registers.map((r) => r.id);
+      const regIds = registers.map((r: any) => r.id);
       const { data: allSales } = await supabase
         .from("sales")
         .select("register_id, total")
@@ -56,7 +56,7 @@ export function RegisterHistory() {
         salesMap.set(sale.register_id, existing);
       }
 
-      const items: HistoryItem[] = registers.map((reg) => {
+      const items: HistoryItem[] = registers.map((reg: any) => {
         const sales = salesMap.get(reg.id) ?? { total: 0, count: 0 };
         return { ...reg, total_sales: sales.total, sales_count: sales.count };
       });

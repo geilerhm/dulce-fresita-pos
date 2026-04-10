@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { getActiveCompanyId } from "@/lib/supabase/company";
+import { createClient } from "@/lib/db/client";
+import { getActiveCompanyId } from "@/lib/db/company";
 import { formatCOP } from "@/lib/utils/format";
 import { playSuccess, playRemove } from "@/lib/utils/sounds";
-import { toast } from "sonner";
+import { toast } from "@/lib/utils/toast";
 import {
   Package, MagnifyingGlass, ArrowLeft, Plus, Check, Warning,
   PencilSimple, Backspace, TrashSimple, CaretUp, CaretDown,
@@ -73,7 +73,7 @@ export default function InventarioPage() {
     // Sync selected ingredient with fresh data so detail views reflect updates
     setSelected(prev => prev ? freshIngredients.find(i => i.id === prev.id) ?? prev : null);
     setLoading(false);
-  }, [supabase]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchData(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -147,7 +147,7 @@ export default function InventarioPage() {
       presentation_qty: p.presentation_qty as number,
     }));
     setSupplierPrices(prices);
-    setSelectedSupplierIds(new Set(prices.map(p => p.supplier_id)));
+    setSelectedSupplierIds(new Set(prices.map((p: any) => p.supplier_id)));
   }
 
   function toggleSort(key: SortKey) {
@@ -239,7 +239,7 @@ export default function InventarioPage() {
       const newCostPerUnit = Math.round(addCost / addQty);
       await supabase.from("ingredients").update({ cost_per_unit: newCostPerUnit }).eq("id", selected.id);
     }
-    playSuccess(); toast.success("Stock actualizado"); setSaving(false); goBack(); fetchData();
+    toast.success("Stock actualizado"); setSaving(false); goBack(); fetchData();
   }
 
   async function handleSaveIngredient() {
@@ -270,19 +270,19 @@ export default function InventarioPage() {
       }
       toast.success("Insumo creado");
     }
-    playSuccess(); setSaving(false); goBack(); fetchData();
+    setSaving(false); goBack(); fetchData();
   }
 
   async function handleDeactivate() {
     if (!selected) return;
     setSaving(true);
     await supabase.from("ingredients").update({ active: false }).eq("id", selected.id);
-    playRemove(); toast.success("Insumo desactivado"); setSaving(false); goBack(); fetchData();
+    toast.success("Insumo desactivado"); setSaving(false); goBack(); fetchData();
   }
 
   async function handleReactivate(id: string) {
     await supabase.from("ingredients").update({ active: true }).eq("id", id);
-    playSuccess(); toast.success("Insumo reactivado"); fetchData();
+    toast.success("Insumo reactivado"); fetchData();
   }
 
   // ── LOADING ──

@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { getActiveCompanyId } from "@/lib/supabase/company";
+import { createClient } from "@/lib/db/client";
+import { getActiveCompanyId } from "@/lib/db/company";
 import { ProductIcon, ICON_CATEGORIES } from "@/lib/utils/product-icons";
 import { formatCOP } from "@/lib/utils/format";
 import { NumericKeypad } from "@/components/ui/NumericKeypad";
 import { playSuccess, playAdd, playRemove } from "@/lib/utils/sounds";
-import { toast } from "sonner";
+import { toast } from "@/lib/utils/toast";
 import {
   MagnifyingGlass,
   Plus,
@@ -124,7 +124,7 @@ export default function ProductosPage() {
     ]);
     setCategories(cats ?? []);
     setProducts(
-      (prods ?? []).map((p) => ({
+      (prods ?? []).map((p: any) => ({
         ...p,
         cost: p.cost ?? 0,
         description: p.description ?? "",
@@ -180,7 +180,7 @@ export default function ProductosPage() {
       .select("id, ingredient_id, quantity, unit, ingredient:ingredients(name, cost_per_unit)")
       .eq("company_id", companyId)
       .eq("product_id", productId);
-    setRecipeRows((data ?? []).map((r) => ({
+    setRecipeRows((data ?? []).map((r: any) => ({
       id: r.id, ingredient_id: r.ingredient_id, quantity: r.quantity, unit: r.unit,
       ingredient_name: (r.ingredient as unknown as { name: string })?.name ?? "",
       cost_per_unit: (r.ingredient as unknown as { cost_per_unit: number })?.cost_per_unit ?? 0,
@@ -395,8 +395,7 @@ export default function ProductosPage() {
     if (view === "edit" && editProduct) {
       const { error } = await supabase.from("products").update(payload).eq("id", editProduct.id).eq("company_id", getActiveCompanyId());
       if (error) { toast.error(error.code === "23505" ? "Este código ya existe" : `Error: ${error.message}`); setSaving(false); return; }
-      playSuccess();
-      toast.success("Producto actualizado");
+            toast.success("Producto actualizado");
       setSaving(false);
       setView("list");
       setEditProduct(null);
@@ -415,8 +414,7 @@ export default function ProductosPage() {
         setRefManual(true);
         fetchRecipe(newProduct.id);
         fetchIngredients();
-        playSuccess();
-        toast.success("Producto creado — agrega ingredientes a la receta");
+                toast.success("Producto creado — agrega ingredientes a la receta");
       }
     }
   }
@@ -425,8 +423,7 @@ export default function ProductosPage() {
     if (!editProduct) return;
     setSaving(true);
     await supabase.from("products").update({ active: false }).eq("id", editProduct.id);
-    playSuccess();
-    toast.success("Producto desactivado");
+        toast.success("Producto desactivado");
     await fetchData();
     setSaving(false);
     goBack();
@@ -454,8 +451,7 @@ export default function ProductosPage() {
 
   async function handleReactivate(id: string) {
     await supabase.from("products").update({ active: true }).eq("id", id);
-    playSuccess();
-    toast.success("Producto reactivado");
+        toast.success("Producto reactivado");
     fetchData();
   }
 

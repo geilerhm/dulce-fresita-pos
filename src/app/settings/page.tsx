@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { SOUND_PACKS, getSavedPackId, savePackId, type SoundPack } from "@/lib/utils/sounds";
 import { useAuth } from "@/contexts/AuthContext";
-import { toast } from "sonner";
+import { toast } from "@/lib/utils/toast";
 import { Strawberry } from "@/lib/utils/fruit-icons";
 import { SpeakerHigh, Check, ShoppingCart, Trash, CashRegister, User, Storefront, SignOut } from "@phosphor-icons/react";
 import { useRouter } from "next/navigation";

@@ -19,9 +19,6 @@ self.addEventListener("fetch", (event) => {
   // Skip non-GET
   if (request.method !== "GET") return;
 
-  // Skip Supabase API calls — let them fail naturally so the app uses cached data
-  if (request.url.includes("supabase.co")) return;
-
   // Skip chrome-extension and other non-http
   if (!request.url.startsWith("http")) return;
 

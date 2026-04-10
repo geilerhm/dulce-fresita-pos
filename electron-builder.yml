@@ -1,0 +1,49 @@
+appId: com.dulcefresita.app
+productName: Dulce Fresita
+copyright: Copyright 2026 Dulce Fresita
+
+directories:
+  output: dist-electron
+
+files:
+  - electron/**/*
+  - "!node_modules"
+  - "!src"
+  - "!.next"
+  - "!data"
+
+extraResources:
+  - from: .next/standalone
+    to: standalone
+    filter:
+      - "**/*"
+  - from: .next/static
+    to: standalone/.next/static
+    filter:
+      - "**/*"
+  - from: public
+    to: standalone/public
+    filter:
+      - "**/*"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: public/icon-512.png
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Dulce Fresita
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  icon: public/icon-512.png

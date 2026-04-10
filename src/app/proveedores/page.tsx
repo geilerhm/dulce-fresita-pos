@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { getActiveCompanyId } from "@/lib/supabase/company";
+import { createClient } from "@/lib/db/client";
+import { getActiveCompanyId } from "@/lib/db/company";
 import { formatCOP } from "@/lib/utils/format";
-import { toast } from "sonner";
+import { toast } from "@/lib/utils/toast";
 import {
   Truck, Plus, ArrowLeft, Check, Trash, PencilSimple, Phone, MagnifyingGlass,
   Package, X, Warning,
@@ -82,9 +82,9 @@ export default function ProveedoresPage() {
       countMap[p.supplier_id] = (countMap[p.supplier_id] ?? 0) + 1;
     }
 
-    setSuppliers(data.map(s => ({ ...s, _priceCount: countMap[s.id] ?? 0 })));
+    setSuppliers(data.map((s: any) => ({ ...s, _priceCount: countMap[s.id] ?? 0 })));
     setLoading(false);
-  }, [supabase]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchSuppliers(); }, [fetchSuppliers]);
 
@@ -108,7 +108,7 @@ export default function ProveedoresPage() {
       ingredient_unit: (p.ingredient as { unit: string } | null)?.unit ?? "",
     })));
     setLoadingPrices(false);
-  }, [supabase]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchIngredients = useCallback(async () => {
     const companyId = getActiveCompanyId();
@@ -119,7 +119,7 @@ export default function ProveedoresPage() {
       .eq("active", true)
       .order("name");
     setAllIngredients((data as IngredientOption[]) ?? []);
-  }, [supabase]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => {
     if (!search.trim()) return suppliers;

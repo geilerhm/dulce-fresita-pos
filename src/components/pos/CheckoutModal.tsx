@@ -5,12 +5,11 @@ import { useCart } from "@/contexts/CartContext";
 import { Money, DeviceMobile, Backspace, ArrowLeft, Prohibit, Check, CheckCircle } from "@phosphor-icons/react";
 import { VoidSaleModal } from "@/components/caja/VoidSaleModal";
 import { useState, useEffect, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { playSuccess, playAdd } from "@/lib/utils/sounds";
-import { toast } from "sonner";
+import { createClient } from "@/lib/db/client";
+import { playSuccess, playAdd, playClick, playError } from "@/lib/utils/sounds";
+import { toast } from "@/lib/utils/toast";
 import { useCaja } from "@/contexts/CajaContext";
-import { useOnlineStatus, queueSale } from "@/lib/hooks/useOffline";
-import { getActiveCompanyId } from "@/lib/supabase/company";
+import { getActiveCompanyId } from "@/lib/db/company";
 import type { PaymentMethod } from "@/lib/utils/constants";
 
 function isAddon(name: string, categorySlug?: string): boolean {
@@ -36,7 +35,6 @@ const NUMPAD_KEYS = [
 export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
   const { items, total, clear, itemCount } = useCart();
   const { register } = useCaja();
-  const online = useOnlineStatus();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("efectivo");
   const [receivedAmount, setReceivedAmount] = useState(0);
   const [processing, setProcessing] = useState(false);
@@ -87,28 +85,9 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
       quantity: item.quantity, unit_price: item.price, subtotal: item.price * item.quantity,
     }));
 
-    if (!online) {
-      // OFFLINE: queue sale locally
-      queueSale({
-        id: crypto.randomUUID(),
-        total,
-        payment_method: paymentMethod,
-        items: saleItems,
-        register_id: register?.id ?? null,
-        created_at: new Date().toISOString(),
-      });
-      playSuccess();
-      clear();
-      setSuccess({ saleId: "offline", saleNumber: Math.floor(Math.random() * 9000) + 1000, total, change: receivedAmount - total });
-      setTimeout(() => { setSuccess(null); onClose(); }, 2000);
-      setProcessing(false);
-      return;
-    }
-
-    // ONLINE: normal flow
     try {
-      const supabase = createClient();
-      const { data: sale, error: saleError } = await supabase
+      const client = createClient();
+      const { data: sale, error: saleError } = await client
         .from("sales")
         .insert({ total, payment_method: paymentMethod, status: "completed", register_id: register?.id ?? null, company_id: getActiveCompanyId() })
         .select("id, sale_number")
@@ -116,34 +95,21 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
       if (saleError) throw saleError;
 
       const dbItems = saleItems.map((item) => ({ sale_id: sale.id, company_id: getActiveCompanyId(), ...item }));
-      const { error: itemsError } = await supabase.from("sale_items").insert(dbItems);
+      const { error: itemsError } = await client.from("sale_items").insert(dbItems);
       if (itemsError) throw itemsError;
 
-      await supabase.rpc("fn_deduct_inventory", { p_sale_id: sale.id });
+      await client.rpc("fn_deduct_inventory", { p_sale_id: sale.id });
 
       playSuccess();
       clear();
       setSuccess({ saleId: sale.id, saleNumber: sale.sale_number, total, change: receivedAmount - total });
       setTimeout(() => { setSuccess(null); onClose(); }, 2000);
     } catch (error) {
-      // If online request fails, queue it offline
       console.error(error);
-      queueSale({
-        id: crypto.randomUUID(),
-        total,
-        payment_method: paymentMethod,
-        items: saleItems,
-        register_id: register?.id ?? null,
-        created_at: new Date().toISOString(),
-      });
-      playSuccess();
-      toast.warning("Sin conexión — venta guardada para sincronizar");
-      clear();
-      setSuccess({ saleId: "queued", saleNumber: Math.floor(Math.random() * 9000) + 1000, total, change: receivedAmount - total });
-      setTimeout(() => { setSuccess(null); onClose(); }, 2000);
+      toast.error("Error al procesar la venta");
     }
     finally { setProcessing(false); }
-  }, [items, total, paymentMethod, processing, clear, onClose, register, online, receivedAmount]);
+  }, [items, total, paymentMethod, processing, clear, onClose, register, receivedAmount]);
 
   if (!isOpen) return null;
 
@@ -235,7 +201,7 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
           ]).map(({ id, label, Icon }) => (
             <button
               key={id}
-              onClick={() => setPaymentMethod(id)}
+              onClick={() => { setPaymentMethod(id); playClick(); }}
               className={`flex items-center justify-center gap-3 rounded-2xl border-2 py-4 transition-all active:scale-95
                 ${paymentMethod === id
                   ? "border-primary bg-primary/5"
@@ -256,16 +222,16 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
               {QUICK_AMOUNTS.map((amt) => (
                 <button
                   key={amt}
-                  onClick={() => setReceivedAmount(amt)}
-                  className={`flex-1 h-11 rounded-xl text-sm font-bold transition-all active:scale-95
+                  onClick={() => { setReceivedAmount(amt); playClick(); }}
+                  className={`flex-1 h-14 rounded-2xl text-base font-bold transition-all active:scale-95
                     ${receivedAmount === amt ? "bg-primary text-white" : "bg-default-100 text-default-600 hover:bg-default-200"}`}
                 >
                   {amt >= 1000 ? `$${amt / 1000}K` : formatCOP(amt)}
                 </button>
               ))}
               <button
-                onClick={() => setReceivedAmount(total)}
-                className={`flex-1 h-11 rounded-xl text-sm font-bold transition-all active:scale-95
+                onClick={() => { setReceivedAmount(total); playClick(); }}
+                className={`flex-1 h-14 rounded-2xl text-base font-bold transition-all active:scale-95
                   ${receivedAmount === total ? "bg-primary text-white" : "bg-default-100 text-default-600 hover:bg-default-200"}`}
               >
                 Exacto
@@ -284,18 +250,18 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
             </button>
 
             {/* Numpad */}
-            <div className="grid grid-cols-3 gap-1.5 mb-3 shrink-0">
+            <div className="grid grid-cols-3 gap-2 mb-3 shrink-0 flex-1">
               {NUMPAD_KEYS.flat().map((key) => (
                 <button
                   key={key}
                   onClick={() => handleNumpadKey(key)}
-                  className={`flex items-center justify-center h-14 rounded-xl text-lg font-bold transition-all active:scale-95 select-none
+                  className={`flex items-center justify-center rounded-2xl text-2xl font-bold transition-all active:scale-95 select-none min-h-[4.5rem]
                     ${key === "DEL"
                       ? "bg-default-200 text-default-600 hover:bg-default-300"
                       : "bg-white border border-default-200 text-default-800 hover:bg-default-50"
                     }`}
                 >
-                  {key === "DEL" ? <Backspace size={22} weight="bold" /> : key}
+                  {key === "DEL" ? <Backspace size={28} weight="bold" /> : key}
                 </button>
               ))}
             </div>

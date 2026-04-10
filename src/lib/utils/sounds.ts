@@ -34,6 +34,8 @@ export interface SoundPack {
   add: () => void;
   remove: () => void;
   success: () => void;
+  click: () => void;
+  error: () => void;
 }
 
 const crystal: SoundPack = {
@@ -52,6 +54,15 @@ const crystal: SoundPack = {
   success: () => {
     const t = getCtx().currentTime;
     [523.25, 659.25, 783.99].forEach((f, i) => tone(f, 0.07, t + i * 0.12, 0.5));
+  },
+  click: () => {
+    const t = getCtx().currentTime;
+    tone(660, 0.04, t, 0.08);
+  },
+  error: () => {
+    const t = getCtx().currentTime;
+    tone(330, 0.08, t, 0.15);
+    tone(262, 0.08, t + 0.12, 0.2);
   },
 };
 
@@ -72,6 +83,15 @@ const minimal: SoundPack = {
     tone(880, 0.06, t, 0.15);
     tone(1108.73, 0.06, t + 0.1, 0.2);
   },
+  click: () => {
+    const t = getCtx().currentTime;
+    tone(800, 0.03, t, 0.05);
+  },
+  error: () => {
+    const t = getCtx().currentTime;
+    tone(300, 0.05, t, 0.12);
+    tone(220, 0.05, t + 0.08, 0.15);
+  },
 };
 
 const wooden: SoundPack = {
@@ -90,6 +110,15 @@ const wooden: SoundPack = {
   success: () => {
     const t = getCtx().currentTime;
     [587.33, 739.99, 880].forEach((f, i) => tone(f, 0.09, t + i * 0.1, 0.3, "triangle"));
+  },
+  click: () => {
+    const t = getCtx().currentTime;
+    tone(500, 0.06, t, 0.06, "triangle");
+  },
+  error: () => {
+    const t = getCtx().currentTime;
+    tone(350, 0.08, t, 0.12, "triangle");
+    tone(260, 0.08, t + 0.1, 0.18, "triangle");
   },
 };
 
@@ -148,6 +177,38 @@ const bubble: SoundPack = {
       osc.stop(start + 0.2);
     });
   },
+  click: () => {
+    const ctx = getCtx();
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(350, t);
+    osc.frequency.exponentialRampToValueAtTime(500, t + 0.04);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.06, t + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    osc.start(t);
+    osc.stop(t + 0.06);
+  },
+  error: () => {
+    const ctx = getCtx();
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(400, t);
+    osc.frequency.exponentialRampToValueAtTime(200, t + 0.15);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.1, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    osc.start(t);
+    osc.stop(t + 0.2);
+  },
 };
 
 const silent: SoundPack = {
@@ -157,6 +218,8 @@ const silent: SoundPack = {
   add: () => {},
   remove: () => {},
   success: () => {},
+  click: () => {},
+  error: () => {},
 };
 
 // ── Registry ──────────────────────────────────────────
@@ -184,3 +247,5 @@ function getPack(): SoundPack {
 export function playAdd() { try { getPack().add(); } catch {} }
 export function playRemove() { try { getPack().remove(); } catch {} }
 export function playSuccess() { try { getPack().success(); } catch {} }
+export function playClick() { try { getPack().click(); } catch {} }
+export function playError() { try { getPack().error(); } catch {} }
