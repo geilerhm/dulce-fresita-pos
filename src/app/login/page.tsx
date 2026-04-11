@@ -3,32 +3,37 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
-import { Warning, Plus, Trash, Storefront, ArrowRight, SignOut } from "@phosphor-icons/react";
+import { Warning, ArrowRight } from "@phosphor-icons/react";
+import { toast } from "@/lib/utils/toast";
 import { Strawberry } from "@/lib/utils/fruit-icons";
+import { TextInputWithKeyboard } from "@/components/ui/TextInputWithKeyboard";
 
 export default function LoginPage() {
-  const { login, register, logout, isAuthenticated, companies, activeCompany, addCompany, selectCompany, deleteCompany } = useAuth();
+  const { login, register, logout, isAuthenticated, activeCompany, addCompany, selectCompany, userId } = useAuth();
   const router = useRouter();
 
   const [mode, setMode] = useState<"login" | "register">("login");
-  const [step, setStep] = useState<"auth" | "company">("auth");
-
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [step, setStep] = useState<"auth" | "needsCompany">("auth");
+  const [loading, setLoading] = useState(false);
+  const [registering, setRegistering] = useState(false);
   const [error, setError] = useState("");
 
+  // Login
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [newCompanyName, setNewCompanyName] = useState("");
+
+  // Register
   const [regName, setRegName] = useState("");
   const [regUser, setRegUser] = useState("");
   const [regPass, setRegPass] = useState("");
-
-  const [newCompanyName, setNewCompanyName] = useState("");
+  const [regCompany, setRegCompany] = useState("");
 
   useEffect(() => {
+    if (registering) return; // Don't interfere during registration
     if (isAuthenticated && activeCompany) router.push("/pos");
-    else if (isAuthenticated) setStep("company");
-  }, [isAuthenticated, activeCompany, router]);
-
-  const [loading, setLoading] = useState(false);
+    else if (isAuthenticated && !activeCompany) setStep("needsCompany");
+  }, [isAuthenticated, activeCompany, router, registering]);
 
   async function handleLogin() {
     setError("");
@@ -37,6 +42,22 @@ export default function LoginPage() {
     const result = await login(username, password);
     setLoading(false);
     if (!result.success) setError(result.error || "Usuario o contraseña incorrectos");
+    // If no company, useEffect will set step to "needsCompany"
+  }
+
+  async function handleCreateCompany() {
+    if (!newCompanyName.trim()) { setError("El nombre es requerido"); return; }
+    setLoading(true);
+    try {
+      const company = await addCompany(newCompanyName.trim(), userId ?? undefined);
+      selectCompany(company.id, company);
+      toast.success(`¡Bienvenido a ${newCompanyName.trim()}!`);
+      router.push("/pos");
+    } catch (e) {
+      console.error(e);
+      setError("Error al crear empresa");
+    }
+    setLoading(false);
   }
 
   async function handleRegister() {
@@ -45,23 +66,8 @@ export default function LoginPage() {
     setLoading(true);
     const result = await register(regUser, regPass, regName);
     setLoading(false);
-    if (!result.success) setError(result.error || "Error al registrar");
-  }
-
-  function handleSelectCompany(id: string) { selectCompany(id); router.push("/pos"); }
-
-  async function handleAddCompany() {
-    if (!newCompanyName.trim()) return;
-    setLoading(true);
-    try {
-      const c = await addCompany(newCompanyName.trim());
-      setNewCompanyName("");
-      selectCompany(c.id);
-      router.push("/pos");
-    } catch {
-      setError("Error al crear empresa. ¿Tienes conexión?");
-    }
-    setLoading(false);
+    if (!result.success) { setError(result.error || "Error al registrar"); return; }
+    // useEffect will redirect to "needsCompany" step
   }
 
   return (
@@ -93,131 +99,73 @@ export default function LoginPage() {
             <h1 className="text-xl font-extrabold text-default-900">Dulce Fresita</h1>
           </div>
 
-          {step === "auth" ? (
+          {step === "needsCompany" ? (
             <div className="space-y-6">
-              {/* Tabs */}
-              <div className="flex gap-1 bg-default-100 rounded-2xl p-1">
-                <button onClick={() => { setMode("login"); setError(""); }}
-                  className={`flex-1 py-3 rounded-xl text-sm font-semibold transition-all ${mode === "login" ? "bg-white text-default-800 shadow-sm" : "text-default-400"}`}>
-                  Ingresar
-                </button>
-                <button onClick={() => { setMode("register"); setError(""); }}
-                  className={`flex-1 py-3 rounded-xl text-sm font-semibold transition-all ${mode === "register" ? "bg-white text-default-800 shadow-sm" : "text-default-400"}`}>
-                  Registrarse
-                </button>
+              <div>
+                <h2 className="text-2xl font-extrabold text-default-900">Crea tu empresa</h2>
+                <p className="text-sm text-default-400 mt-1">Necesitas una empresa para comenzar</p>
               </div>
-
-              {mode === "login" ? (
-                <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Usuario</label>
-                    <input value={username} onChange={(e) => { setUsername(e.target.value); setError(""); }}
-                      onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                      placeholder="tu usuario" autoFocus
-                      className="h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-base outline-none focus:border-primary transition-all w-full" />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Contraseña</label>
-                    <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }}
-                      onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                      placeholder="tu contraseña"
-                      className="h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-base outline-none focus:border-primary transition-all w-full" />
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Nombre completo</label>
-                    <input value={regName} onChange={(e) => { setRegName(e.target.value); setError(""); }}
-                      onKeyDown={(e) => e.key === "Enter" && handleRegister()}
-                      placeholder="Ej: Alejandra Hipia" autoFocus
-                      className="h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-base outline-none focus:border-primary transition-all w-full" />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Usuario</label>
-                    <input value={regUser} onChange={(e) => { setRegUser(e.target.value.toLowerCase().replace(/\s/g, "")); setError(""); }}
-                      onKeyDown={(e) => e.key === "Enter" && handleRegister()}
-                      placeholder="sin espacios"
-                      className="h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-base outline-none focus:border-primary transition-all w-full" />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Contraseña</label>
-                    <input type="password" value={regPass} onChange={(e) => { setRegPass(e.target.value); setError(""); }}
-                      onKeyDown={(e) => e.key === "Enter" && handleRegister()}
-                      placeholder="mínimo 4 caracteres"
-                      className="h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-base outline-none focus:border-primary transition-all w-full" />
-                  </div>
-                </div>
-              )}
-
+              <TextInputWithKeyboard value={newCompanyName} onChange={(v) => { setNewCompanyName(v); setError(""); }}
+                label="Nombre de tu empresa" placeholder="Ej: Dulce Fresita" />
               {error && (
-                <div className="flex items-center gap-2 rounded-xl bg-red-50 border border-red-200 px-4 py-3 animate-in fade-in duration-200">
+                <div className="flex items-center gap-2 rounded-xl bg-red-50 border border-red-200 px-4 py-3">
                   <Warning size={18} weight="fill" className="text-red-500 shrink-0" />
                   <p className="text-sm text-red-600 font-medium">{error}</p>
                 </div>
               )}
-
-              <button onClick={mode === "login" ? handleLogin : handleRegister} disabled={loading}
+              <button onClick={handleCreateCompany} disabled={loading}
                 className="w-full h-14 rounded-2xl bg-primary text-white text-lg font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all flex items-center justify-center gap-2 disabled:opacity-60">
-                {loading ? "Cargando..." : mode === "login" ? "Ingresar" : "Crear cuenta"} {!loading && <ArrowRight size={20} weight="bold" />}
+                {loading ? "Cargando..." : "Comenzar"} {!loading && <ArrowRight size={20} weight="bold" />}
+              </button>
+              <button onClick={() => { logout(); setStep("auth"); }}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-default-400 hover:text-red-500 hover:bg-red-50 transition-all">
+                Cerrar sesión
               </button>
             </div>
           ) : (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-2xl font-extrabold text-default-900">Tu empresa</h2>
-                <p className="text-sm text-default-400 mt-1">
-                  {companies.length > 0 ? "Selecciona o crea una empresa" : "Crea tu primera empresa para empezar"}
-                </p>
-              </div>
-
-              {companies.length > 0 && (
-                <div className="space-y-2">
-                  {companies.map((company) => (
-                    <div key={company.id} className="rounded-2xl border border-default-100 bg-white hover:shadow-md transition-all">
-                      <div className="flex items-center gap-3 p-4">
-                        <button onClick={() => handleSelectCompany(company.id)} className="flex-1 flex items-center gap-3 text-left">
-                          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary shrink-0">
-                            <Storefront size={24} weight="duotone" />
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-base font-bold text-default-800">{company.name}</p>
-                            <p className="text-xs text-default-400">{new Date(company.created_at).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })}</p>
-                          </div>
-                          <ArrowRight size={18} className="text-default-300" />
-                        </button>
-                        <button onClick={() => deleteCompany(company.id)}
-                          className="flex h-10 w-10 items-center justify-center rounded-xl text-default-300 hover:text-red-500 hover:bg-red-50 transition-all shrink-0">
-                          <Trash size={16} weight="bold" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-default-500 uppercase tracking-wider">Nueva empresa</label>
-                <div className="flex gap-2">
-                  <input value={newCompanyName} onChange={(e) => setNewCompanyName(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleAddCompany()}
-                    placeholder="Nombre de tu empresa..."
-                    className="flex-1 h-14 rounded-2xl border-2 border-default-200 bg-white px-4 text-sm outline-none focus:border-primary transition-all" />
-                  <button onClick={handleAddCompany} disabled={!newCompanyName.trim()}
-                    className="h-14 px-5 rounded-2xl bg-primary text-white font-bold hover:brightness-105 active:scale-95 transition-all disabled:opacity-40 flex items-center gap-1.5 shrink-0">
-                    <Plus size={18} weight="bold" /> Crear
-                  </button>
-                </div>
-              </div>
-
-              <button onClick={() => { logout(); setStep("auth"); }}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-default-400 hover:text-red-500 hover:bg-red-50 transition-all">
-                <SignOut size={18} weight="bold" /> Cerrar sesión
+          <div className="space-y-6">
+            {/* Tabs */}
+            <div className="flex gap-1 bg-default-100 rounded-2xl p-1">
+              <button onClick={() => { setMode("login"); setError(""); }}
+                className={`flex-1 py-3 rounded-xl text-sm font-semibold transition-all ${mode === "login" ? "bg-white text-default-800 shadow-sm" : "text-default-400"}`}>
+                Ingresar
+              </button>
+              <button onClick={() => { setMode("register"); setError(""); }}
+                className={`flex-1 py-3 rounded-xl text-sm font-semibold transition-all ${mode === "register" ? "bg-white text-default-800 shadow-sm" : "text-default-400"}`}>
+                Registrarse
               </button>
             </div>
+
+            {mode === "login" ? (
+              <div className="space-y-4">
+                <TextInputWithKeyboard value={username} onChange={(v) => { setUsername(v); setError(""); }}
+                  label="Usuario" placeholder="tu usuario" />
+                <TextInputWithKeyboard value={password} onChange={(v) => { setPassword(v); setError(""); }}
+                  label="Contraseña" placeholder="tu contraseña" password />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <TextInputWithKeyboard value={regName} onChange={(v) => { setRegName(v); setError(""); }}
+                  label="Tu nombre" placeholder="Ej: Alejandra" />
+                <TextInputWithKeyboard value={regUser} onChange={(v) => { setRegUser(v.toLowerCase().replace(/\s/g, "")); setError(""); }}
+                  label="Usuario" placeholder="sin espacios" />
+                <TextInputWithKeyboard value={regPass} onChange={(v) => { setRegPass(v); setError(""); }}
+                  label="Contraseña" placeholder="mínimo 4 caracteres" password />
+              </div>
+            )}
+
+            {error && (
+              <div className="flex items-center gap-2 rounded-xl bg-red-50 border border-red-200 px-4 py-3 animate-in fade-in duration-200">
+                <Warning size={18} weight="fill" className="text-red-500 shrink-0" />
+                <p className="text-sm text-red-600 font-medium">{error}</p>
+              </div>
+            )}
+
+            <button onClick={mode === "login" ? handleLogin : handleRegister} disabled={loading}
+              className="w-full h-14 rounded-2xl bg-primary text-white text-lg font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all flex items-center justify-center gap-2 disabled:opacity-60">
+              {loading ? "Cargando..." : mode === "login" ? "Ingresar" : "Crear cuenta"} {!loading && <ArrowRight size={20} weight="bold" />}
+            </button>
+          </div>
           )}
         </div>
       </div>

@@ -116,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { success: true };
   }, [fetchCompanies]);
 
-  const register = useCallback(async (user: string, pass: string, name: string): Promise<{ success: boolean; error?: string }> => {
+  const register = useCallback(async (user: string, pass: string, name: string): Promise<{ success: boolean; error?: string; userId?: string }> => {
     if (!user.trim() || !pass.trim() || !name.trim()) return { success: false, error: "Todos los campos son requeridos" };
     if (pass.length < 4) return { success: false, error: "La contraseña debe tener al menos 4 caracteres" };
 
@@ -137,7 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     cacheSet(SESSION_KEY, sess);
     setCompanies([]);
 
-    return { success: true };
+    return { success: true, userId: data.id };
   }, []);
 
   const logout = useCallback(() => {
@@ -148,26 +148,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     cacheRemove(ACTIVE_COMPANY_KEY);
   }, []);
 
-  const addCompany = useCallback(async (name: string): Promise<Company> => {
-    if (!session) throw new Error("No autenticado");
+  const addCompany = useCallback(async (name: string, overrideUserId?: string): Promise<Company> => {
+    const userId = overrideUserId || session?.id;
+    if (!userId) throw new Error("No autenticado");
 
     const client = createClient();
     const { data, error } = await client
       .from("companies")
-      .insert({ name, owner_id: session.id })
+      .insert({ name, owner_id: userId })
       .select("id, name, owner_id, created_at")
       .single();
 
     if (error) throw error;
 
-    const comps = await fetchCompanies(session.id);
+    const comps = await fetchCompanies(userId);
     setCompanies(comps);
 
     return data;
   }, [session, fetchCompanies]);
 
-  const selectCompany = useCallback((id: string) => {
-    const company = companies.find((c) => c.id === id);
+  const selectCompany = useCallback((id: string, companyObj?: Company) => {
+    const company = companyObj || companies.find((c) => c.id === id);
     if (company) {
       setActiveCompany(company);
       cacheSet(ACTIVE_COMPANY_KEY, id);

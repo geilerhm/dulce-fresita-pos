@@ -202,9 +202,11 @@ function handleSelect(req: DbRequest) {
   const mainFilters = [...filters];
   if (innerJoinIds && innerFk) {
     const ids = [...innerJoinIds];
-    if (ids.length > 0) {
-      mainFilters.push({ col: innerFk, op: "in", val: ids });
+    if (ids.length === 0) {
+      // No matching rows in joined table — return empty result
+      return ok(req.single ? null : []);
     }
+    mainFilters.push({ col: innerFk, op: "in", val: ids });
   }
 
   const { sql: where, params } = buildWhereClause(mainFilters);

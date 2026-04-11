@@ -2,7 +2,9 @@
 
 import { formatCOP } from "@/lib/utils/format";
 import { useCart } from "@/contexts/CartContext";
-import { Money, DeviceMobile, Backspace, ArrowLeft, Prohibit, Check, CheckCircle } from "@phosphor-icons/react";
+import { Money, DeviceMobile, Backspace, ArrowLeft, Prohibit, Check, CheckCircle, Printer } from "@phosphor-icons/react";
+import { printReceipt, type ReceiptData } from "./Receipt";
+import { useAuth } from "@/contexts/AuthContext";
 import { VoidSaleModal } from "@/components/caja/VoidSaleModal";
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/db/client";
@@ -32,13 +34,24 @@ const NUMPAD_KEYS = [
   ["00", "0", "DEL"],
 ];
 
+interface SuccessData {
+  saleId: string;
+  saleNumber: number;
+  total: number;
+  change: number;
+  paymentMethod: PaymentMethod;
+  received: number;
+  items: { name: string; quantity: number; unitPrice: number; subtotal: number }[];
+}
+
 export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
   const { items, total, clear, itemCount } = useCart();
   const { register } = useCaja();
+  const { displayName, activeCompany } = useAuth();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("efectivo");
   const [receivedAmount, setReceivedAmount] = useState(0);
   const [processing, setProcessing] = useState(false);
-  const [success, setSuccess] = useState<{ saleId: string; saleNumber: number; total: number; change: number } | null>(null);
+  const [success, setSuccess] = useState<SuccessData | null>(null);
   const [showVoid, setShowVoid] = useState(false);
 
   const change = receivedAmount - total;
@@ -102,7 +115,11 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
 
       playSuccess();
       clear();
-      setSuccess({ saleId: sale.id, saleNumber: sale.sale_number, total, change: receivedAmount - total });
+      setSuccess({
+        saleId: sale.id, saleNumber: sale.sale_number, total, change: receivedAmount - total,
+        paymentMethod, received: receivedAmount,
+        items: saleItems.map(i => ({ name: i.product_name, quantity: i.quantity, unitPrice: i.unit_price, subtotal: i.subtotal })),
+      });
       setTimeout(() => { setSuccess(null); onClose(); }, 2000);
     } catch (error) {
       console.error(error);
@@ -113,11 +130,30 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
 
   if (!isOpen) return null;
 
+  function handlePrint() {
+    if (!success) return;
+    const now = new Date();
+    const pad2 = (n: number) => String(n).padStart(2, "0");
+    const receiptData: ReceiptData = {
+      businessName: activeCompany?.name || "Dulce Fresita",
+      saleNumber: success.saleNumber,
+      date: `${pad2(now.getDate())}/${pad2(now.getMonth() + 1)}/${now.getFullYear()}`,
+      time: `${pad2(now.getHours())}:${pad2(now.getMinutes())}`,
+      items: success.items,
+      total: success.total,
+      paymentMethod: success.paymentMethod,
+      received: success.received,
+      change: success.change,
+      cashierName: displayName || undefined,
+    };
+    printReceipt(receiptData);
+  }
+
   // Success fullscreen
   if (success) {
     return (
       <>
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white" onClick={() => { setSuccess(null); onClose(); }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white">
           <div className="animate-in zoom-in-95 fade-in duration-300 flex flex-col items-center gap-4 text-center">
             <div className="flex h-24 w-24 items-center justify-center rounded-full bg-emerald-100">
               <CheckCircle size={48} weight="fill" className="text-emerald-600" />
@@ -127,6 +163,16 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
             {success.change > 0 && (
               <p className="text-xl text-default-500 tabular-nums">Cambio: {formatCOP(success.change)}</p>
             )}
+            <div className="flex gap-3 mt-4">
+              <button onClick={handlePrint}
+                className="flex items-center gap-2 h-14 px-8 rounded-2xl bg-primary text-white text-base font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all">
+                <Printer size={22} weight="bold" /> Imprimir
+              </button>
+              <button onClick={() => { setSuccess(null); onClose(); }}
+                className="flex items-center gap-2 h-14 px-8 rounded-2xl bg-default-100 text-default-600 text-base font-bold hover:bg-default-200 active:scale-[0.97] transition-all">
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       </>

@@ -2,11 +2,14 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useCaja } from "@/contexts/CajaContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/db/client";
 import { getActiveCompanyId } from "@/lib/db/company";
-import { formatCOP, formatTime } from "@/lib/utils/format";
+import { formatCOP, formatTime, localDayToUtcRange } from "@/lib/utils/format";
+import { toast } from "@/lib/utils/toast";
+import { printReceipt, type ReceiptData } from "@/components/pos/Receipt";
 import { VoidSaleModal } from "./VoidSaleModal";
-import { Money, DeviceMobile, Receipt, Prohibit, ArrowsClockwise, CaretLeft, CaretRight, CalendarBlank } from "@phosphor-icons/react";
+import { Money, DeviceMobile, Receipt, Prohibit, ArrowsClockwise, CaretLeft, CaretRight, CalendarBlank, Printer } from "@phosphor-icons/react";
 
 interface SaleRecord {
   id: string;
@@ -37,19 +40,52 @@ function formatDateLabel(dateStr: string): string {
 
 export function SalesHistory() {
   const { register } = useCaja();
+  const { displayName, activeCompany } = useAuth();
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [voidSale, setVoidSale] = useState<{ id: string; sale_number: number; total: number } | null>(null);
+  const [printingId, setPrintingId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(toLocalDateStr(new Date()));
+
+  async function handleReprint(sale: SaleRecord) {
+    setPrintingId(sale.id);
+    try {
+      const created = new Date(sale.created_at);
+      const pad2 = (n: number) => String(n).padStart(2, "0");
+      const receiptData: ReceiptData = {
+        businessName: activeCompany?.name || "Dulce Fresita",
+        saleNumber: sale.sale_number,
+        date: `${pad2(created.getDate())}/${pad2(created.getMonth() + 1)}/${created.getFullYear()}`,
+        time: `${pad2(created.getHours())}:${pad2(created.getMinutes())}`,
+        items: sale.items.map((i) => ({
+          name: i.product_name,
+          quantity: i.quantity,
+          unitPrice: i.quantity > 0 ? i.subtotal / i.quantity : i.subtotal,
+          subtotal: i.subtotal,
+        })),
+        total: sale.total,
+        paymentMethod: sale.payment_method as "efectivo" | "nequi",
+        cashierName: displayName || undefined,
+      };
+      await printReceipt(receiptData);
+      toast.success(`Ticket #${sale.sale_number} enviado`);
+    } catch {
+      toast.error("Error al imprimir");
+    } finally {
+      setPrintingId(null);
+    }
+  }
 
   const loadSales = useCallback(async () => {
     setLoading(true);
     const supabase = createClient();
     const companyId = getActiveCompanyId();
 
-    const startOfDay = `${selectedDate}T00:00:00`;
-    const endOfDay = `${selectedDate}T23:59:59`;
+    // SQLite stores created_at as UTC via strftime. Convert the selected
+    // local day into its UTC boundary range so sales made late at night
+    // (local → next UTC day) still match the filter.
+    const { start: startOfDay, end: endOfDay } = localDayToUtcRange(selectedDate);
 
     let query = supabase
       .from("sales")
@@ -219,9 +255,27 @@ export function SalesHistory() {
                       </div>
                     )}
 
-                    {/* Void button */}
-                    {!isVoided && (
-                      <div className="px-4 pb-3">
+                    {/* Actions: print + void */}
+                    <div className="px-4 pb-3 space-y-2">
+                      <button
+                        onClick={() => handleReprint(sale)}
+                        disabled={printingId === sale.id}
+                        className="w-full h-11 rounded-xl bg-primary text-white text-sm font-semibold shadow-sm shadow-primary/20 hover:brightness-105 active:scale-[0.97] transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
+                      >
+                        {printingId === sale.id ? (
+                          <>
+                            <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            Imprimiendo...
+                          </>
+                        ) : (
+                          <>
+                            <Printer size={16} weight="bold" />
+                            Imprimir ticket
+                          </>
+                        )}
+                      </button>
+
+                      {!isVoided && (
                         <button
                           onClick={() => setVoidSale({ id: sale.id, sale_number: sale.sale_number, total: sale.total })}
                           className="w-full h-11 rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-100 active:scale-[0.97] transition-all flex items-center justify-center gap-2"
@@ -229,8 +283,8 @@ export function SalesHistory() {
                           <Prohibit size={16} weight="bold" />
                           Anular esta venta
                         </button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

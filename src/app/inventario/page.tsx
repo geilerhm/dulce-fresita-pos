@@ -248,7 +248,7 @@ export default function InventarioPage() {
     if (refDuplicate) { toast.error("Este código ya existe"); return; }
 
     setSaving(true);
-    const payload = { ref: form.ref, name: form.name, unit: form.unit, purchase_unit: form.purchase_unit || null, cost_per_unit: form.cost_per_unit, min_stock: form.min_stock, category_id: form.category_id, active: form.active };
+    const payload = { ref: form.ref, name: form.name, unit: form.unit, purchase_unit: form.purchase_unit || null, cost_per_unit: form.cost_per_unit, stock_quantity: form.stock_quantity, min_stock: form.min_stock, category_id: form.category_id, active: form.active };
     const companyId = getActiveCompanyId();
     if (view === "edit" && selected) {
       const { error } = await supabase.from("ingredients").update(payload).eq("id", selected.id);

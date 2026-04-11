@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Native modules must not be bundled — loaded at runtime via require
+  serverExternalPackages: ["usb", "node-thermal-printer", "better-sqlite3"],
   experimental: {
     optimizePackageImports: [
       "@phosphor-icons/react",

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/db/client";
 import { getActiveCompanyId } from "@/lib/db/company";
-import { formatCOP, formatDate, formatTime } from "@/lib/utils/format";
+import { formatCOP, formatDate, formatTime, localDayToUtcRange } from "@/lib/utils/format";
 import {
   ChartLine,
   Receipt,
@@ -77,26 +77,31 @@ const DATE_RANGE_OPTIONS: { key: DateRange; label: string }[] = [
 /* Date range helper                                                   */
 /* ------------------------------------------------------------------ */
 
+/** Local date → "YYYY-MM-DD" (avoids the UTC shift of toISOString). */
+function toLocalDateStr(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function getDateRange(range: DateRange): { from: string; to: string } {
   const now = new Date();
-  const today = now.toISOString().split("T")[0];
+  const today = toLocalDateStr(now);
 
   if (range === "hoy") return { from: today, to: today };
   if (range === "semana") {
     const weekAgo = new Date(now);
     weekAgo.setDate(weekAgo.getDate() - 7);
-    return { from: weekAgo.toISOString().split("T")[0], to: today };
+    return { from: toLocalDateStr(weekAgo), to: today };
   }
   if (range === "mes") {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { from: monthStart.toISOString().split("T")[0], to: today };
+    return { from: toLocalDateStr(monthStart), to: today };
   }
   // ultimo mes
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
   return {
-    from: lastMonthStart.toISOString().split("T")[0],
-    to: lastMonthEnd.toISOString().split("T")[0],
+    from: toLocalDateStr(lastMonthStart),
+    to: toLocalDateStr(lastMonthEnd),
   };
 }
 
@@ -132,8 +137,9 @@ export default function ReportesPage() {
     const companyId = getActiveCompanyId();
     if (!companyId) { setLoading(false); return; }
     const { from, to } = getDateRange(range);
-    const fromTs = from;
-    const toTs = to + "T23:59:59";
+    // Convert local day boundaries to UTC range matching SQLite's created_at
+    const { start: fromTs } = localDayToUtcRange(from);
+    const { end: toTs } = localDayToUtcRange(to);
 
     // --- Fetch all sales in range ---
     const { data: salesData } = await supabase
