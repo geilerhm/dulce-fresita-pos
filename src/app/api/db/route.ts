@@ -307,7 +307,7 @@ function handleInsert(req: DbRequest) {
       const cols = Object.keys(item);
       const placeholders = cols.map(() => "?").join(", ");
       const colNames = cols.join(", ");
-      db.prepare(`INSERT INTO ${table} (${colNames}) VALUES (${placeholders})`).run(...cols.map((c) => sqlVal(item[c])));
+      db.prepare(`INSERT OR IGNORE INTO ${table} (${colNames}) VALUES (${placeholders})`).run(...cols.map((c) => sqlVal(item[c])));
     }
   });
 

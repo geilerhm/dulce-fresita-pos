@@ -27,6 +27,8 @@ import {
   Minus,
   Plus,
   Trash,
+  Storefront,
+  Motorcycle,
 } from "@phosphor-icons/react";
 
 interface Category { id: string; name: string; slug: string; icon?: string; }
@@ -85,6 +87,7 @@ function PedidoClient({ categories, products }: { categories: Category[]; produc
   const [search, setSearch] = useState("");
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [step, setStep] = useState<"products" | "info">("products");
+  const [orderType, setOrderType] = useState<"local" | "delivery">("local");
 
   // Customer info
   const [customerName, setCustomerName] = useState("");
@@ -116,10 +119,11 @@ function PedidoClient({ categories, products }: { categories: Category[]; produc
     const { data: order, error } = await client
       .from("orders")
       .insert({
+        order_type: orderType,
         customer_name: customerName.trim(),
-        customer_phone: customerPhone.trim() || null,
-        delivery_address: deliveryAddress.trim() || null,
-        scheduled_time: scheduledTime || null,
+        customer_phone: orderType === "delivery" ? (customerPhone.trim() || null) : null,
+        delivery_address: orderType === "delivery" ? (deliveryAddress.trim() || null) : null,
+        scheduled_time: orderType === "delivery" ? (scheduledTime || null) : null,
         status: "pending",
         payment_method: paymentMethod,
         total,
@@ -152,6 +156,7 @@ function PedidoClient({ categories, products }: { categories: Category[]; produc
   // ── Step 2: Customer info ──
   if (step === "info") {
     return <CustomerInfoStep
+      orderType={orderType}
       itemCount={itemCount} total={total} paymentMethod={paymentMethod}
       customerName={customerName} setCustomerName={setCustomerName}
       customerPhone={customerPhone} setCustomerPhone={setCustomerPhone}
@@ -206,9 +211,10 @@ function PedidoClient({ categories, products }: { categories: Category[]; produc
       {/* Order sidebar — same style as Cart but with "Siguiente" instead of "Cobrar" */}
       <div className="hidden lg:flex w-[380px] shrink-0 h-full flex-col border-l border-default-100 bg-white">
         {/* Header */}
-        <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-default-100">
-          <ShoppingCart size={20} weight="duotone" className="text-amber-500" />
-          <span className="font-bold text-default-800">Pedido</span>
+        <div className="flex flex-col gap-2.5 px-5 py-3.5 border-b border-default-100">
+          <div className="flex items-center gap-2.5">
+            <ShoppingCart size={20} weight="duotone" className="text-amber-500" />
+            <span className="font-bold text-default-800">Pedido</span>
           {itemCount > 0 && (
             <>
               <span className="ml-auto text-[11px] font-bold text-default-400 bg-default-100 rounded-full px-2.5 py-1 tabular-nums">
@@ -220,6 +226,20 @@ function PedidoClient({ categories, products }: { categories: Category[]; produc
               </button>
             </>
           )}
+          </div>
+          {/* Order type toggle */}
+          <div className="flex gap-1.5">
+            <button onClick={() => { setOrderType("local"); playClick(); }}
+              className={`flex-1 h-9 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95
+                ${orderType === "local" ? "bg-blue-50 text-blue-600 border border-blue-200" : "bg-default-50 text-default-400 border border-default-100"}`}>
+              <Storefront size={14} weight={orderType === "local" ? "fill" : "duotone"} /> Local
+            </button>
+            <button onClick={() => { setOrderType("delivery"); playClick(); }}
+              className={`flex-1 h-9 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95
+                ${orderType === "delivery" ? "bg-purple-50 text-purple-600 border border-purple-200" : "bg-default-50 text-default-400 border border-default-100"}`}>
+              <Motorcycle size={14} weight={orderType === "delivery" ? "fill" : "duotone"} /> Domicilio
+            </button>
+          </div>
         </div>
 
         {/* Items */}
@@ -302,7 +322,7 @@ function PedidoClient({ categories, products }: { categories: Category[]; produc
 type FieldId = "name" | "phone" | "address" | "notes";
 
 function CustomerInfoStep({
-  itemCount, total, paymentMethod,
+  orderType, itemCount, total, paymentMethod,
   customerName, setCustomerName,
   customerPhone, setCustomerPhone,
   deliveryAddress, setDeliveryAddress,
@@ -310,6 +330,7 @@ function CustomerInfoStep({
   orderNotes, setOrderNotes,
   setPaymentMethod, saving, onBack, onCreate,
 }: {
+  orderType: "local" | "delivery";
   itemCount: number; total: number; paymentMethod: "efectivo" | "nequi";
   customerName: string; setCustomerName: (v: string) => void;
   customerPhone: string; setCustomerPhone: (v: string) => void;
@@ -372,7 +393,7 @@ function CustomerInfoStep({
         <button onClick={onBack} className="flex h-11 w-11 items-center justify-center rounded-2xl hover:bg-default-100 active:scale-95 transition-all">
           <ArrowLeft size={22} className="text-default-600" />
         </button>
-        <h1 className="text-lg font-bold text-default-800">Datos del cliente</h1>
+        <h1 className="text-lg font-bold text-default-800">{orderType === "local" ? "Pedido en local" : "Datos de entrega"}</h1>
         <span className="ml-auto text-xs font-bold text-default-400 bg-default-100 rounded-full px-2.5 py-1">{itemCount} productos · {formatCOP(total)}</span>
       </div>
 
@@ -389,54 +410,57 @@ function CustomerInfoStep({
             </div>
           </div>
 
-          <div>
-            <label className="text-xs font-bold text-default-500 uppercase tracking-wider mb-1.5 block">Teléfono</label>
-            <div className="relative">
-              <Phone size={20} weight="duotone" className="absolute left-3 top-1/2 -translate-y-1/2 text-default-400" />
-              <input value={customerPhone} onFocus={() => handleFocus("phone")}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                placeholder="300 123 4567" type="tel" inputMode="tel" autoComplete="tel"
-                className={inputClass("phone")} />
-            </div>
-          </div>
+          {orderType === "delivery" && (
+            <>
+              <div>
+                <label className="text-xs font-bold text-default-500 uppercase tracking-wider mb-1.5 block">Teléfono</label>
+                <div className="relative">
+                  <Phone size={20} weight="duotone" className="absolute left-3 top-1/2 -translate-y-1/2 text-default-400" />
+                  <input value={customerPhone} onFocus={() => handleFocus("phone")}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    placeholder="300 123 4567" type="tel" inputMode="tel" autoComplete="tel"
+                    className={inputClass("phone")} />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-default-500 uppercase tracking-wider mb-1.5 block">Dirección de entrega</label>
+                <div className="relative">
+                  <MapPin size={20} weight="duotone" className="absolute left-3 top-4 text-default-400" />
+                  <textarea value={deliveryAddress} onFocus={() => handleFocus("address")}
+                    onChange={(e) => setDeliveryAddress(e.target.value)}
+                    placeholder="Calle, barrio, referencia..." rows={2} inputMode="text" autoComplete="street-address"
+                    className={`w-full pl-10 pr-4 py-3 rounded-2xl border-2 bg-white text-base font-medium outline-none transition-all resize-none ${
+                      activeField === "address" ? "border-primary ring-1 ring-primary/20" : "border-default-200"
+                    }`} />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-default-500 uppercase tracking-wider mb-1.5 block">Hora de entrega</label>
+                <div className="relative">
+                  <Clock size={20} weight="duotone" className="absolute left-3 top-1/2 -translate-y-1/2 text-default-400" />
+                  <input value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} type="time"
+                    onFocus={() => setActiveField(null)}
+                    className="w-full h-14 pl-10 pr-4 rounded-2xl border-2 border-default-200 bg-white text-base font-medium outline-none focus:border-primary transition-all" />
+                </div>
+              </div>
+            </>
+          )}
 
           <div>
-            <label className="text-xs font-bold text-default-500 uppercase tracking-wider mb-1.5 block">Dirección de entrega</label>
-            <div className="relative">
-              <MapPin size={20} weight="duotone" className="absolute left-3 top-4 text-default-400" />
-              <textarea value={deliveryAddress} onFocus={() => handleFocus("address")}
-                onChange={(e) => setDeliveryAddress(e.target.value)}
-                placeholder="Calle, barrio, referencia..." rows={2} inputMode="text" autoComplete="street-address"
-                className={`w-full pl-10 pr-4 py-3 rounded-2xl border-2 bg-white text-base font-medium outline-none transition-all resize-none ${
-                  activeField === "address" ? "border-primary ring-1 ring-primary/20" : "border-default-200"
-                }`} />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-bold text-default-500 uppercase tracking-wider mb-1.5 block">Hora de entrega</label>
-              <div className="relative">
-                <Clock size={20} weight="duotone" className="absolute left-3 top-1/2 -translate-y-1/2 text-default-400" />
-                <input value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} type="time"
-                  onFocus={() => setActiveField(null)}
-                  className="w-full h-14 pl-10 pr-4 rounded-2xl border-2 border-default-200 bg-white text-base font-medium outline-none focus:border-primary transition-all" />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs font-bold text-default-500 uppercase tracking-wider mb-1.5 block">Método de pago</label>
-              <div className="flex gap-2">
-                <button onClick={() => { setPaymentMethod("efectivo"); playClick(); }}
-                  className={`flex-1 h-14 rounded-2xl border-2 font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95
-                    ${paymentMethod === "efectivo" ? "border-primary bg-primary/5 text-primary" : "border-default-200 text-default-500"}`}>
-                  <Money size={20} /> Efectivo
-                </button>
-                <button onClick={() => { setPaymentMethod("nequi"); playClick(); }}
-                  className={`flex-1 h-14 rounded-2xl border-2 font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95
-                    ${paymentMethod === "nequi" ? "border-primary bg-primary/5 text-primary" : "border-default-200 text-default-500"}`}>
-                  <DeviceMobile size={20} /> Nequi
-                </button>
-              </div>
+            <label className="text-xs font-bold text-default-500 uppercase tracking-wider mb-1.5 block">Método de pago</label>
+            <div className="flex gap-2">
+              <button onClick={() => { setPaymentMethod("efectivo"); playClick(); }}
+                className={`flex-1 h-14 rounded-2xl border-2 font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95
+                  ${paymentMethod === "efectivo" ? "border-primary bg-primary/5 text-primary" : "border-default-200 text-default-500"}`}>
+                <Money size={20} /> Efectivo
+              </button>
+              <button onClick={() => { setPaymentMethod("nequi"); playClick(); }}
+                className={`flex-1 h-14 rounded-2xl border-2 font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95
+                  ${paymentMethod === "nequi" ? "border-primary bg-primary/5 text-primary" : "border-default-200 text-default-500"}`}>
+                <DeviceMobile size={20} /> Nequi
+              </button>
             </div>
           </div>
 

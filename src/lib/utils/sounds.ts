@@ -249,3 +249,75 @@ export function playRemove() { try { getPack().remove(); } catch {} }
 export function playSuccess() { try { getPack().success(); } catch {} }
 export function playClick() { try { getPack().click(); } catch {} }
 export function playError() { try { getPack().error(); } catch {} }
+
+/** Notification chime — loud, attention-grabbing */
+function playChime() {
+  const ctx = getCtx();
+  const t = ctx.currentTime;
+  [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+    tone(freq, 0.15, t + i * 0.15, 0.4);
+  });
+  [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+    tone(freq, 0.12, t + 0.9 + i * 0.15, 0.35);
+  });
+}
+
+/** Cached voice — resolved once */
+let _cachedVoice: SpeechSynthesisVoice | null | undefined;
+
+function getBestVoice(): SpeechSynthesisVoice | null {
+  if (_cachedVoice !== undefined) return _cachedVoice;
+  if (typeof window === "undefined" || !window.speechSynthesis) return null;
+  const voices = window.speechSynthesis.getVoices();
+  if (voices.length === 0) return null; // not loaded yet
+  const preferred = [
+    "Paulina", "Mónica", "Monica", "Sabina", "Helena", "Elvira", "Dalia",
+    "Google español", "Angélica", "Angelica", "Jimena", "Penélope", "Lola",
+  ];
+  for (const name of preferred) {
+    const v = voices.find((v) => v.name.includes(name) && v.lang.startsWith("es"));
+    if (v) { _cachedVoice = v; return v; }
+  }
+  const maleNames = ["jorge", "diego", "juan", "carlos", "andres", "eddy", "grandpa", "rocko", "reed", "grandma"];
+  const esVoices = voices.filter((v) => v.lang.startsWith("es"));
+  _cachedVoice = esVoices.find((v) => !maleNames.some((m) => v.name.toLowerCase().includes(m))) || esVoices[0] || null;
+  return _cachedVoice;
+}
+
+function speak(message: string) {
+  if (typeof window === "undefined" || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(message);
+  const voice = getBestVoice();
+  if (voice) utterance.voice = voice;
+  utterance.lang = "es-MX";
+  utterance.rate = 0.95;
+  utterance.pitch = 1.15;
+  utterance.volume = 1;
+  window.speechSynthesis.speak(utterance);
+}
+
+// Preload voices eagerly
+if (typeof window !== "undefined" && window.speechSynthesis) {
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = () => {
+    _cachedVoice = undefined; // reset cache so it re-resolves
+    getBestVoice();
+  };
+}
+
+/** Debounce — prevent repeated alerts within 5 seconds */
+let _lastAlert = 0;
+
+/** Notification for new orders — chime + spoken announcement */
+export function playNewOrderAlert(orderType: "local" | "delivery") {
+  try {
+    const now = Date.now();
+    if (now - _lastAlert < 5000) return; // skip if played recently
+    _lastAlert = now;
+
+    playChime();
+    const msg = orderType === "local" ? "Nuevo pedido para local" : "Nuevo pedido para domicilio";
+    setTimeout(() => speak(msg), 1500);
+  } catch {}
+}

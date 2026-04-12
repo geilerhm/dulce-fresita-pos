@@ -169,6 +169,7 @@ function getDb(): Database.Database {
     CREATE TABLE IF NOT EXISTS orders (
       id TEXT PRIMARY KEY,
       order_number INTEGER,
+      order_type TEXT NOT NULL DEFAULT 'delivery' CHECK (order_type IN ('local', 'delivery')),
       customer_name TEXT NOT NULL,
       customer_phone TEXT,
       delivery_address TEXT,
@@ -198,6 +199,7 @@ function getDb(): Database.Database {
 
   // Schema migrations for existing databases
   try { _db.exec("ALTER TABLE inventory_movements ADD COLUMN supplier_id TEXT"); } catch { /* already exists */ }
+  try { _db.exec("ALTER TABLE orders ADD COLUMN order_type TEXT NOT NULL DEFAULT 'delivery'"); } catch { /* already exists */ }
 
   return _db;
 }

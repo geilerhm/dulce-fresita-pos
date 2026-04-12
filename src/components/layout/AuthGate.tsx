@@ -10,15 +10,15 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    if (pathname === "/login") return;
+    if (pathname === "/login" || pathname.startsWith("/pedir")) return;
 
     if (!isAuthenticated || !activeCompany) {
       router.push("/login");
     }
   }, [isAuthenticated, activeCompany, pathname, router]);
 
-  // Login page doesn't need protection
-  if (pathname === "/login") return <>{children}</>;
+  // Public pages don't need protection
+  if (pathname === "/login" || pathname.startsWith("/pedir")) return <>{children}</>;
 
   // Not authenticated — show nothing while redirecting
   if (!isAuthenticated || !activeCompany) return null;

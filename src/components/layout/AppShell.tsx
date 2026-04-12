@@ -11,11 +11,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, activeCompany } = useAuth();
   const pathname = usePathname();
 
-  const isLogin = pathname === "/login";
-  const showShell = isAuthenticated && activeCompany && !isLogin;
+  const isPublic = pathname === "/login" || pathname.startsWith("/pedir");
+  const showShell = isAuthenticated && activeCompany && !isPublic;
 
   if (!showShell) {
-    return <>{children}</>;
+    return <div className="flex-1 w-full overflow-auto">{children}</div>;
   }
 
   return (

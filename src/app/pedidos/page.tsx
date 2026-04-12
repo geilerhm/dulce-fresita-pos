@@ -3,9 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/db/client";
 import { getActiveCompanyId } from "@/lib/db/company";
+import { useAuth } from "@/contexts/AuthContext";
 import { formatCOP, formatTime } from "@/lib/utils/format";
 import { toast } from "@/lib/utils/toast";
 import { playClick } from "@/lib/utils/sounds";
+import { cloudSync } from "@/lib/hooks/useCloudSync";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -21,6 +23,8 @@ import {
   HourglassSimple,
   CaretRight,
   LinkSimple,
+  Storefront,
+  PencilSimple,
   ListDashes,
 } from "@phosphor-icons/react";
 
@@ -36,6 +40,7 @@ interface OrderItem {
 interface Order {
   id: string;
   order_number: number;
+  order_type: "local" | "delivery";
   customer_name: string;
   customer_phone: string | null;
   delivery_address: string | null;
@@ -58,19 +63,22 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   cancelled: { label: "Cancelado", color: "text-red-600", bg: "bg-red-50", border: "border-red-200", Icon: XCircle },
 };
 
-const NEXT_STATUS: Record<string, string> = {
-  pending: "preparing",
-  preparing: "ready",
-  ready: "delivering",
-  delivering: "delivered",
-};
+// Delivery: pending → preparing → ready → delivering → delivered
+// Local:    pending → preparing → ready → delivered
+function getNextStatus(status: string, orderType: string): string | null {
+  if (orderType === "local") {
+    const flow: Record<string, string> = { pending: "preparing", preparing: "ready", ready: "delivered" };
+    return flow[status] ?? null;
+  }
+  const flow: Record<string, string> = { pending: "preparing", preparing: "ready", ready: "delivering", delivering: "delivered" };
+  return flow[status] ?? null;
+}
 
-const NEXT_LABEL: Record<string, string> = {
-  pending: "Preparar",
-  preparing: "Marcar Listo",
-  ready: "Enviar",
-  delivering: "Entregado",
-};
+function getNextLabel(status: string, orderType: string): string {
+  if (orderType === "local" && status === "ready") return "Entregar";
+  const labels: Record<string, string> = { pending: "Preparar", preparing: "Marcar Listo", ready: "Enviar", delivering: "Entregado" };
+  return labels[status] ?? "";
+}
 
 const FILTER_TABS = [
   { id: "all", label: "Todos", Icon: ListDashes },
@@ -84,11 +92,13 @@ const FILTER_TABS = [
 
 export default function PedidosPage() {
   const router = useRouter();
+  const { activeCompany } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [processing, setProcessing] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   const fetchOrders = useCallback(async () => {
     const client = createClient();
@@ -127,15 +137,26 @@ export default function PedidosPage() {
     setLoading(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { fetchOrders(); }, [fetchOrders]);
-
-  useEffect(() => {
-    const interval = setInterval(fetchOrders, 10000);
-    return () => clearInterval(interval);
+  const handleSync = useCallback(async () => {
+    setSyncing(true);
+    const [pulled] = await Promise.all([
+      cloudSync(),
+      new Promise((r) => setTimeout(r, 800)), // min 800ms para que se vea el efecto
+    ]);
+    await fetchOrders();
+    setSyncing(false);
+    if (pulled > 0) toast.success(`${pulled} pedido${pulled > 1 ? "s" : ""} sincronizado${pulled > 1 ? "s" : ""}`);
   }, [fetchOrders]);
 
+  useEffect(() => { handleSync(); }, [handleSync]);
+
+  useEffect(() => {
+    const interval = setInterval(handleSync, 10000);
+    return () => clearInterval(interval);
+  }, [handleSync]);
+
   async function handleAdvanceStatus(order: Order) {
-    const nextStatus = NEXT_STATUS[order.status];
+    const nextStatus = getNextStatus(order.status, order.order_type || "delivery");
     if (!nextStatus) return;
 
     setProcessing(order.id);
@@ -190,20 +211,20 @@ export default function PedidosPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <button onClick={fetchOrders} className="flex h-11 w-11 items-center justify-center rounded-2xl text-default-400 hover:bg-default-100 transition-all">
-              <ArrowsClockwise size={20} />
+            <button onClick={handleSync} disabled={syncing} className={`flex items-center gap-1.5 h-11 px-4 rounded-2xl text-default-500 hover:bg-default-100 text-sm font-semibold transition-all`}>
+              <ArrowsClockwise size={18} className={syncing ? "animate-spin" : ""} /> Sincronizar
             </button>
             <button
               onClick={() => {
                 const companyId = getActiveCompanyId();
-                const url = `${window.location.origin}/pedir?c=${companyId}`;
+                const name = encodeURIComponent(activeCompany?.name || "Dulce Fresita");
+                const url = `${window.location.origin}/pedir?c=${companyId}&n=${name}`;
                 navigator.clipboard.writeText(url);
                 toast.success("Link copiado — compártelo con el domiciliario");
               }}
-              className="flex h-11 w-11 items-center justify-center rounded-2xl text-default-400 hover:bg-default-100 transition-all"
-              title="Copiar link remoto"
+              className="flex items-center gap-1.5 h-11 px-4 rounded-2xl text-default-500 hover:bg-default-100 text-sm font-semibold transition-all"
             >
-              <LinkSimple size={20} />
+              <LinkSimple size={18} /> Copiar Link
             </button>
             <button
               onClick={() => router.push("/pedidos/nuevo")}
@@ -262,17 +283,17 @@ export default function PedidosPage() {
               {displayOrders.map((order) => {
                 const cfg = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending;
                 const isExpanded = expandedId === order.id;
-                const isActive = !!NEXT_STATUS[order.status];
+                const isActive = !!getNextStatus(order.status, order.order_type || "delivery");
 
                 return (
-                  <div key={order.id} className={`rounded-2xl border-2 overflow-hidden transition-all ${cfg.border} bg-white`}>
+                  <div key={order.id} className={`rounded-2xl border-2 overflow-hidden transition-all ${cfg.border} ${!isActive ? "opacity-40 grayscale bg-default-50" : "bg-white"}`}>
                     {/* Order header */}
                     <button
                       onClick={() => { setExpandedId(isExpanded ? null : order.id); playClick(); }}
                       className="w-full flex items-center gap-3 px-4 py-4 text-left active:bg-black/5 transition-colors"
                     >
-                      <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${cfg.bg} ${cfg.color} shrink-0`}>
-                        <cfg.Icon size={28} weight="fill" />
+                      <div className={`flex h-14 w-14 items-center justify-center rounded-2xl shrink-0 ${order.order_type === "local" ? "bg-blue-50 text-blue-600" : "bg-purple-50 text-purple-600"}`}>
+                        {order.order_type === "local" ? <Storefront size={28} weight="fill" /> : <Motorcycle size={28} weight="fill" />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
@@ -340,25 +361,35 @@ export default function PedidosPage() {
 
                         {/* Action buttons */}
                         {isActive && (
-                          <div className="border-t border-default-100 px-4 py-3 flex gap-2">
-                            <button
-                              onClick={() => handleAdvanceStatus(order)}
-                              disabled={processing === order.id}
-                              className="flex-1 h-16 rounded-2xl bg-primary text-white text-lg font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all disabled:opacity-40 flex items-center justify-center gap-2"
-                            >
-                              {processing === order.id ? (
-                                <span className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                              ) : (
-                                <>{NEXT_LABEL[order.status]} <CaretRight size={20} weight="bold" /></>
-                              )}
-                            </button>
-                            <button
-                              onClick={() => handleCancel(order)}
-                              disabled={processing === order.id}
-                              className="h-16 px-6 rounded-2xl border-2 border-red-200 text-red-500 font-bold text-lg hover:bg-red-50 active:scale-[0.97] transition-all"
-                            >
-                              <XCircle size={24} weight="bold" />
-                            </button>
+                          <div className="border-t border-default-100 px-4 py-3 space-y-2">
+                            {order.status === "pending" && (
+                              <button
+                                onClick={() => router.push(`/pedidos/editar?id=${order.id}`)}
+                                className="w-full h-12 rounded-2xl border-2 border-default-200 text-default-600 text-sm font-bold hover:bg-default-50 active:scale-[0.97] transition-all flex items-center justify-center gap-2"
+                              >
+                                <PencilSimple size={18} weight="bold" /> Editar Pedido
+                              </button>
+                            )}
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleAdvanceStatus(order)}
+                                disabled={processing === order.id}
+                                className="flex-1 h-16 rounded-2xl bg-primary text-white text-lg font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+                              >
+                                {processing === order.id ? (
+                                  <span className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                ) : (
+                                  <>{getNextLabel(order.status, order.order_type || "delivery")} <CaretRight size={20} weight="bold" /></>
+                                )}
+                              </button>
+                              <button
+                                onClick={() => handleCancel(order)}
+                                disabled={processing === order.id}
+                                className="h-16 px-6 rounded-2xl border-2 border-red-200 text-red-500 font-bold text-lg hover:bg-red-50 active:scale-[0.97] transition-all"
+                              >
+                                <XCircle size={24} weight="bold" />
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
