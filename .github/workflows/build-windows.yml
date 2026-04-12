@@ -23,31 +23,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Rebuild native modules for Electron
-        run: npx electron-builder install-app-deps
-
+      # Build Next.js FIRST (while native modules are compiled for Node 22)
       - name: Build Next.js
         run: npm run build
         env:
           NEXT_TURBOPACK: "0"
 
-      - name: Rebuild native modules for Node (not Electron)
-        shell: cmd
-        run: |
-          cd .next\standalone
-          npm rebuild better-sqlite3
-          cd ..\..
+      # Now rebuild native modules for Electron (only affects main node_modules)
+      - name: Rebuild native modules for Electron
+        run: npx electron-builder install-app-deps
 
       - name: Prepare standalone
         shell: cmd
         run: |
           xcopy /E /I /H /Y ".next\static" ".next\standalone\.next\static"
           xcopy /E /I /H /Y "public" ".next\standalone\public"
-          echo === Rename node_modules to bypass electron-builder filter ===
           ren ".next\standalone\node_modules" "_node_modules"
-          dir ".next\standalone"
 
-      - name: Download portable Node.js for bundling
+      - name: Download portable Node.js
         shell: cmd
         run: |
           curl -Lo node.zip https://nodejs.org/dist/v22.16.0/node-v22.16.0-win-x64.zip
