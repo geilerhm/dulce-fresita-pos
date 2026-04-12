@@ -6,6 +6,27 @@ const http = require("http");
 const fs = require("fs");
 const net = require("net");
 
+// ── Logging to file ──
+const logDir = path.join(app.getPath("userData"), "logs");
+if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+const logFile = path.join(logDir, "app.log");
+const logStream = fs.createWriteStream(logFile, { flags: "a" });
+
+function log(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}`;
+  console.log(line);
+  logStream.write(line + "\n");
+}
+
+process.on("uncaughtException", (err) => {
+  log(`UNCAUGHT: ${err.stack || err.message}`);
+});
+
+log(`App starting — version ${app.getVersion()}`);
+log(`userData: ${app.getPath("userData")}`);
+log(`resourcesPath: ${process.resourcesPath || "N/A (dev)"}`);
+log(`isPackaged: ${app.isPackaged}`);
+
 let mainWindow = null;
 let serverProcess = null;
 let serverPort = 3456;
@@ -69,17 +90,42 @@ function waitForServer(port, retries = 60) {
 
 async function startServer() {
   const dataDir = getDataDir();
+  log(`dataDir: ${dataDir}`);
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
   }
 
   serverPort = await findFreePort();
+  log(`port: ${serverPort}`);
+
   const serverDir = getServerDir();
+  log(`serverDir: ${serverDir}`);
+  log(`serverDir exists: ${fs.existsSync(serverDir)}`);
+
   const serverScript = path.join(serverDir, "server.js");
+  log(`serverScript: ${serverScript}`);
+  log(`serverScript exists: ${fs.existsSync(serverScript)}`);
+
+  // Log what's in the server directory
+  try {
+    const files = fs.readdirSync(serverDir);
+    log(`serverDir contents: ${files.join(", ")}`);
+    const nmPath = path.join(serverDir, "node_modules");
+    if (fs.existsSync(nmPath)) {
+      const mods = fs.readdirSync(nmPath);
+      log(`node_modules count: ${mods.length}`);
+      log(`node_modules has 'next': ${mods.includes("next")}`);
+      log(`node_modules first 10: ${mods.slice(0, 10).join(", ")}`);
+    } else {
+      log(`node_modules NOT FOUND at ${nmPath}`);
+    }
+  } catch (e) {
+    log(`Error reading serverDir: ${e.message}`);
+  }
 
   if (!fs.existsSync(serverScript)) {
-    console.error("Server script not found:", serverScript);
-    console.error("Run 'npm run build' first");
+    log("FATAL: Server script not found");
+    dialog.showErrorBox("Error", `server.js no encontrado en:\n${serverScript}\n\nLogs: ${logFile}`);
     app.quit();
     return;
   }
@@ -92,22 +138,28 @@ async function startServer() {
     NODE_ENV: "production",
   };
 
+  log(`Spawning: ${process.execPath} ${serverScript}`);
+
   serverProcess = spawn(process.execPath, [serverScript], {
     cwd: serverDir,
     env,
     stdio: ["ignore", "pipe", "pipe"],
   });
 
-  serverProcess.stdout.on("data", (d) => console.log("[server]", d.toString().trim()));
-  serverProcess.stderr.on("data", (d) => console.error("[server]", d.toString().trim()));
+  serverProcess.stdout.on("data", (d) => log(`[server:out] ${d.toString().trim()}`));
+  serverProcess.stderr.on("data", (d) => log(`[server:err] ${d.toString().trim()}`));
   serverProcess.on("exit", (code) => {
-    console.log("[server] exited with code", code);
+    log(`[server] exited with code ${code}`);
+    if (code !== 0 && code !== null) {
+      dialog.showErrorBox("Error", `El servidor se cerró con código ${code}\n\nLogs: ${logFile}`);
+    }
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.loadURL("about:blank");
     }
   });
 
   await waitForServer(serverPort);
+  log("Server ready!");
 }
 
 function createWindow() {
