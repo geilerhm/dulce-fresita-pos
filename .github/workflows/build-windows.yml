@@ -32,15 +32,17 @@ jobs:
         env:
           NEXT_TURBOPACK: "0"
 
-      - name: Verify standalone better-sqlite3
+      - name: Fix native modules in standalone
         shell: bash
         run: |
-          echo "=== Checking standalone .next/node_modules ==="
-          find .next/standalone/.next/node_modules -name "better_sqlite3.node" 2>/dev/null | head -5
-          echo "=== Checking standalone node_modules ==="
-          find .next/standalone/node_modules -name "better_sqlite3.node" 2>/dev/null | head -5
-          echo "=== Testing module loads ==="
-          node -e "require('.next/standalone/node_modules/better-sqlite3'); console.log('ROOT: OK')" || echo "ROOT: FAILED"
+          echo "=== Node ABI ==="
+          node -e "console.log('ABI:', process.versions.modules)"
+          echo "=== Remove .next/node_modules native copies (wrong ABI) ==="
+          find .next/standalone/.next/node_modules -name "*.node" -type f 2>/dev/null | while read f; do echo "DELETE: $f"; rm "$f"; done
+          echo "=== Copy correct binaries from root node_modules ==="
+          find .next/standalone/node_modules -name "better_sqlite3.node" -type f 2>/dev/null | head -3
+          echo "=== Test root module ==="
+          node -e "require('.next/standalone/node_modules/better-sqlite3'); console.log('better-sqlite3: OK')" || echo "better-sqlite3: FAILED"
 
       - name: Prepare standalone
         shell: cmd
