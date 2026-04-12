@@ -12,7 +12,14 @@ directories:
 
 files:
   - electron/**/*
-  - "!node_modules"
+  - node_modules/electron-updater/**/*
+  - node_modules/builder-util-runtime/**/*
+  - node_modules/lazy-val/**/*
+  - node_modules/semver/**/*
+  - node_modules/lodash.isequal/**/*
+  - node_modules/js-yaml/**/*
+  - node_modules/argparse/**/*
+  - node_modules/tiny-typed-emitter/**/*
   - "!src"
   - "!.next"
   - "!data"
