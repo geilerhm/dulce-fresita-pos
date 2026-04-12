@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.16.0
           cache: npm
 
       - name: Install dependencies
@@ -31,6 +31,13 @@ jobs:
         env:
           NEXT_TURBOPACK: "0"
 
+      - name: Rebuild native modules for Node (not Electron)
+        shell: cmd
+        run: |
+          cd .next\standalone
+          npm rebuild better-sqlite3
+          cd ..\..
+
       - name: Prepare standalone
         shell: cmd
         run: |
@@ -39,7 +46,6 @@ jobs:
           echo === Rename node_modules to bypass electron-builder filter ===
           ren ".next\standalone\node_modules" "_node_modules"
           dir ".next\standalone"
-          dir ".next\standalone\_node_modules" /B | findstr /C:"next"
 
       - name: Download portable Node.js for bundling
         shell: cmd
@@ -48,8 +54,6 @@ jobs:
           tar -xf node.zip
           mkdir ".next\standalone\_portable_node"
           copy "node-v22.16.0-win-x64\node.exe" ".next\standalone\_portable_node\node.exe"
-          echo === Portable node ===
-          dir ".next\standalone\_portable_node"
 
       - name: Build Electron & Publish
         run: npx electron-builder --win --publish always
