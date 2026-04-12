@@ -19,7 +19,7 @@ export async function cloudSync(): Promise<number> {
 
   try {
     const companyId = getActiveCompanyId();
-    if (!companyId) return 0;
+    if (!companyId) { _syncing = false; return 0; }
 
     const localDb = createClient();
 
@@ -63,12 +63,22 @@ export async function cloudSync(): Promise<number> {
       .order("created_at", { ascending: true });
 
     if (cloudOrders && cloudOrders.length > 0) {
+      // Batch load all items for all orders (avoid N+1)
+      const orderIds = cloudOrders.map((o: any) => o.id);
+      const { data: allCloudItems } = await supabaseCloud
+        .from("cloud_order_items")
+        .select("*")
+        .in("order_id", orderIds);
+      const itemsByOrder = new Map<string, any[]>();
+      for (const item of allCloudItems ?? []) {
+        const list = itemsByOrder.get(item.order_id) ?? [];
+        list.push(item);
+        itemsByOrder.set(item.order_id, list);
+      }
+
       for (const order of cloudOrders) {
         try {
-          const { data: cloudItems } = await supabaseCloud
-            .from("cloud_order_items")
-            .select("*")
-            .eq("order_id", order.id);
+          const cloudItems = itemsByOrder.get(order.id) ?? [];
 
           const { error: insertErr } = await localDb.from("orders").insert({
             id: order.id, order_type: order.order_type || "delivery", customer_name: order.customer_name,
@@ -84,7 +94,7 @@ export async function cloudSync(): Promise<number> {
             continue;
           }
 
-          if (cloudItems && cloudItems.length > 0) {
+          if (cloudItems.length > 0) {
             for (const item of cloudItems) {
               await localDb.from("order_items").insert({
                 id: item.id, order_id: item.order_id, product_id: item.product_id,

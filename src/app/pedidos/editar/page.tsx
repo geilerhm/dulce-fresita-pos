@@ -151,7 +151,7 @@ function EditClient({ order, orderItems, categories, products }: { order: OrderD
     }).eq("id", order.id);
 
     // Delete old items and insert new ones
-    await client.from("order_items").delete().eq("order_id", order.id);
+    await client.from("order_items").delete().eq("order_id", order.id).eq("company_id", companyId);
 
     const newItems = items.map((item) => ({
       order_id: order.id,

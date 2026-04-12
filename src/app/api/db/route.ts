@@ -301,13 +301,15 @@ function handleInsert(req: DbRequest) {
     }
   }
 
-  // Build INSERT statement
+  // Build INSERT statement — sanitize column names to prevent SQL injection
+  const sanitizeCol = (c: string) => c.replace(/[^a-zA-Z0-9_]/g, "");
   const insertMany = db.transaction((items: any[]) => {
     for (const item of items) {
-      const cols = Object.keys(item);
+      const cols = Object.keys(item).map(sanitizeCol);
+      const rawCols = Object.keys(item);
       const placeholders = cols.map(() => "?").join(", ");
       const colNames = cols.join(", ");
-      db.prepare(`INSERT OR IGNORE INTO ${table} (${colNames}) VALUES (${placeholders})`).run(...cols.map((c) => sqlVal(item[c])));
+      db.prepare(`INSERT OR IGNORE INTO ${table} (${colNames}) VALUES (${placeholders})`).run(...rawCols.map((c) => sqlVal(item[c])));
     }
   });
 
@@ -339,9 +341,10 @@ function handleUpdate(req: DbRequest) {
   const filters = req.filters ?? [];
   const { sql: where, params: whereParams } = buildWhereClause(filters);
 
-  const setCols = Object.keys(data);
+  const rawCols = Object.keys(data);
+  const setCols = rawCols.map((c) => c.replace(/[^a-zA-Z0-9_]/g, ""));
   const setClause = setCols.map((c) => `${c} = ?`).join(", ");
-  const setParams = setCols.map((c) => sqlVal(data[c]));
+  const setParams = rawCols.map((c) => sqlVal(data[c]));
 
   db.prepare(`UPDATE ${table} SET ${setClause}${where}`).run(...setParams, ...whereParams);
   return ok(null);
@@ -367,7 +370,8 @@ function handleUpsert(req: DbRequest) {
       const out = { ...item };
       if (!out.id) out.id = randomUUID();
 
-      const cols = Object.keys(out);
+      const rawCols = Object.keys(out);
+      const cols = rawCols.map((c) => c.replace(/[^a-zA-Z0-9_]/g, ""));
       const colNames = cols.join(", ");
       const placeholders = cols.map(() => "?").join(", ");
       const updateSet = cols.filter((c) => c !== "id").map((c) => `${c} = excluded.${c}`).join(", ");
@@ -375,7 +379,7 @@ function handleUpsert(req: DbRequest) {
       const conflictTarget = onConflict || "id";
       db.prepare(
         `INSERT INTO ${table} (${colNames}) VALUES (${placeholders}) ON CONFLICT(${conflictTarget}) DO UPDATE SET ${updateSet}`
-      ).run(...cols.map((c) => sqlVal(out[c])));
+      ).run(...rawCols.map((c) => sqlVal(out[c])));
     }
   });
 
