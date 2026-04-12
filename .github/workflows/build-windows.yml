@@ -36,10 +36,22 @@ jobs:
         run: |
           cp -r .next/static .next/standalone/.next/static
           cp -r public .next/standalone/public
-          echo "Standalone contents:"
+          echo "=== Standalone contents ==="
           ls -la .next/standalone/
-          echo "node_modules contents:"
+          echo "=== node_modules check ==="
           ls .next/standalone/node_modules/ | head -20
+          echo "=== node_modules/next exists? ==="
+          ls .next/standalone/node_modules/next/package.json && echo "YES" || echo "NO"
+
+      - name: Bundle standalone into a single folder
+        shell: bash
+        run: |
+          mkdir -p standalone-bundle
+          cp -r .next/standalone/* standalone-bundle/
+          echo "=== Bundle contents ==="
+          ls standalone-bundle/
+          echo "=== Bundle node_modules ==="
+          ls standalone-bundle/node_modules/ | head -10
 
       - name: Build Electron & Publish
         run: npx electron-builder --win --publish always
