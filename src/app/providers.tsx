@@ -4,12 +4,14 @@ import { Toaster } from "sonner";
 import { CajaProvider } from "@/contexts/CajaContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AuthGate } from "@/components/layout/AuthGate";
+import { CloudSyncProvider } from "@/components/layout/CloudSyncProvider";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
       <AuthGate>
         <CajaProvider>
+          <CloudSyncProvider />
           {children}
           <Toaster
             position="top-center"

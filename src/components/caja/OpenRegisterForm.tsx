@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { useCaja } from "@/contexts/CajaContext";
 import { formatCOP } from "@/lib/utils/format";
-import { Wallet, WarningCircle, Backspace } from "@phosphor-icons/react";
-import { playSuccess } from "@/lib/utils/sounds";
+import { Wallet, WarningCircle, Backspace, UserCircle } from "@phosphor-icons/react";
 import { toast } from "@/lib/utils/toast";
 
 const QUICK_AMOUNTS = [0, 50000, 100000, 150000, 200000, 250000];
@@ -12,12 +11,17 @@ const QUICK_AMOUNTS = [0, 50000, 100000, 150000, 200000, 250000];
 export function OpenRegisterForm() {
   const { openRegister } = useCaja();
   const [amount, setAmount] = useState(0);
+  const [cashierName, setCashierName] = useState("");
   const [customInput, setCustomInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
 
   async function handleOpen() {
+    if (!cashierName.trim()) {
+      setError("Ingresa el nombre del cajero");
+      return;
+    }
     if (!confirming) {
       setConfirming(true);
       return;
@@ -26,8 +30,8 @@ export function OpenRegisterForm() {
     setLoading(true);
     setError(null);
     try {
-      await openRegister(amount);
-      toast.success("Caja abierta");
+      await openRegister(amount, cashierName.trim());
+      toast.success(`Caja abierta — Cajero: ${cashierName.trim()}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al abrir caja");
       setConfirming(false);
@@ -62,6 +66,21 @@ export function OpenRegisterForm() {
               <p className="text-sm text-red-600">{error}</p>
             </div>
           )}
+
+          {/* Cashier name */}
+          <div>
+            <label className="text-xs font-bold text-default-500 uppercase tracking-wider mb-1.5 block">Nombre del cajero</label>
+            <div className="relative">
+              <UserCircle size={20} weight="duotone" className="absolute left-3 top-1/2 -translate-y-1/2 text-default-400" />
+              <input
+                value={cashierName}
+                onChange={(e) => { setCashierName(e.target.value); setError(null); setConfirming(false); }}
+                placeholder="Ej: María"
+                autoFocus
+                className="w-full h-12 pl-10 pr-4 rounded-xl border-2 border-default-200 bg-white text-sm font-medium outline-none focus:border-primary transition-all"
+              />
+            </div>
+          </div>
 
           {/* Quick amounts */}
           <div className="grid grid-cols-3 gap-2">

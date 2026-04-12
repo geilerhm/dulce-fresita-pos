@@ -17,7 +17,7 @@ export interface ReceiptData {
   cashierName?: string;
 }
 
-function buildReceiptHtml(data: ReceiptData, config: ReceiptConfig): string {
+function buildReceiptHtml(data: ReceiptData, config: ReceiptConfig, blessing?: string): string {
   const itemsHtml = data.items.map(item => `
     <tr>
       <td style="text-align:left;padding:2px 0;">
@@ -103,14 +103,16 @@ function buildReceiptHtml(data: ReceiptData, config: ReceiptConfig): string {
 
   <div class="center footer">${footerLines}</div>
 
+  ${blessing ? `<div class="center" style="margin-top:10px;font-style:italic;font-size:11px;color:#666;">&ldquo;${blessing}&rdquo;</div>` : ""}
+
   <div style="margin-top:16px;">&nbsp;</div>
 </body>
 </html>`;
 }
 
 /** Print via browser dialog (fallback). */
-function printReceiptBrowser(data: ReceiptData, config: ReceiptConfig) {
-  const html = buildReceiptHtml(data, config);
+function printReceiptBrowser(data: ReceiptData, config: ReceiptConfig, blessing?: string) {
+  const html = buildReceiptHtml(data, config, blessing);
   const win = window.open("", "_blank", "width=350,height=600");
   if (!win) return;
   win.document.write(html);
@@ -152,14 +154,14 @@ export async function printReceipt(data: ReceiptData) {
     // Non-OK response or success=false → fall back to browser
     const errorPayload = await res.json().catch(() => ({}));
     console.warn("[printReceipt] Thermal printer failed, falling back to browser:", errorPayload);
-    printReceiptBrowser(data, config);
+    printReceiptBrowser(data, config, blessing);
   } catch (err) {
     console.warn("[printReceipt] Network error, falling back to browser:", err);
-    printReceiptBrowser(data, config);
+    printReceiptBrowser(data, config, blessing);
   }
 }
 
 /** Returns HTML string for preview (no auto-print) */
-export function getReceiptPreviewHtml(data: ReceiptData, config: ReceiptConfig): string {
-  return buildReceiptHtml(data, config);
+export function getReceiptPreviewHtml(data: ReceiptData, config: ReceiptConfig, blessing?: string): string {
+  return buildReceiptHtml(data, config, blessing);
 }

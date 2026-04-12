@@ -51,6 +51,7 @@ const VALID_TABLES = new Set([
   "users", "companies", "categories", "products", "ingredients",
   "recipes", "suppliers", "supplier_prices", "cash_registers",
   "sales", "sale_items", "inventory_movements",
+  "orders", "order_items",
 ]);
 
 function ok(data: any) { return { data, error: null }; }
@@ -280,10 +281,14 @@ function handleInsert(req: DbRequest) {
   const rows = inputRows.map((row: any) => {
     const out = { ...row };
     if (!out.id) out.id = randomUUID();
-    // Auto-increment sale_number
+    // Auto-increment sale_number / order_number
     if (table === "sales" && out.sale_number == null) {
       const result = db.prepare("SELECT MAX(sale_number) as max_num FROM sales").get() as any;
       out.sale_number = (result?.max_num ?? 0) + 1;
+    }
+    if (table === "orders" && out.order_number == null) {
+      const result = db.prepare("SELECT MAX(order_number) as max_num FROM orders").get() as any;
+      out.order_number = (result?.max_num ?? 0) + 1;
     }
     return out;
   });
@@ -438,12 +443,68 @@ function rpcReverseInventory(params: { p_sale_id: string }) {
   return ok(null);
 }
 
+function rpcCompleteOrder(params: { p_order_id: string }) {
+  const order = db.prepare("SELECT * FROM orders WHERE id = ?").get(params.p_order_id) as any;
+  if (!order) return err("Pedido no encontrado");
+  if (order.status === "delivered") return err("Pedido ya fue entregado");
+
+  const items = db.prepare("SELECT * FROM order_items WHERE order_id = ?").all(params.p_order_id) as any[];
+
+  const complete = db.transaction(() => {
+    // Find open register
+    const register = db.prepare("SELECT id FROM cash_registers WHERE company_id = ? AND status = 'open' ORDER BY opened_at DESC LIMIT 1")
+      .get(order.company_id) as any;
+
+    // Create sale
+    const saleId = randomUUID();
+    const maxNum = db.prepare("SELECT MAX(sale_number) as m FROM sales").get() as any;
+    const saleNumber = (maxNum?.m ?? 0) + 1;
+
+    db.prepare(
+      "INSERT INTO sales (id, sale_number, register_id, total, payment_method, status, created_at, company_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run(saleId, saleNumber, register?.id ?? null, order.total, order.payment_method, "completed", new Date().toISOString(), order.company_id);
+
+    // Create sale items
+    for (const item of items) {
+      db.prepare(
+        "INSERT INTO sale_items (id, sale_id, product_id, product_name, quantity, unit_price, subtotal, created_at, company_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(randomUUID(), saleId, item.product_id, item.product_name, item.quantity, item.unit_price, item.subtotal, new Date().toISOString(), order.company_id);
+    }
+
+    // Deduct inventory
+    const saleItems = db.prepare("SELECT * FROM sale_items WHERE sale_id = ?").all(saleId) as any[];
+    for (const si of saleItems) {
+      const recipes = db.prepare("SELECT * FROM recipes WHERE product_id = ?").all(si.product_id) as any[];
+      for (const recipe of recipes) {
+        const ingredient = db.prepare("SELECT * FROM ingredients WHERE id = ?").get(recipe.ingredient_id) as any;
+        if (!ingredient) continue;
+        const deduction = recipe.quantity * si.quantity;
+        db.prepare("UPDATE ingredients SET stock_quantity = ?, updated_at = ? WHERE id = ?")
+          .run(Math.max(0, ingredient.stock_quantity - deduction), new Date().toISOString(), recipe.ingredient_id);
+        db.prepare(
+          "INSERT INTO inventory_movements (id, ingredient_id, type, quantity, reference_id, created_at, company_id) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        ).run(randomUUID(), recipe.ingredient_id, "sale_deduction", -deduction, saleId, new Date().toISOString(), ingredient.company_id);
+      }
+    }
+
+    // Mark order as delivered
+    db.prepare("UPDATE orders SET status = 'delivered' WHERE id = ?").run(params.p_order_id);
+
+    return { saleId, saleNumber };
+  });
+
+  const result = complete();
+  return ok(result);
+}
+
 function handleRpc(req: DbRequest) {
   switch (req.rpcName) {
     case "fn_deduct_inventory":
       return rpcDeductInventory(req.rpcParams);
     case "fn_reverse_inventory":
       return rpcReverseInventory(req.rpcParams);
+    case "fn_complete_order":
+      return rpcCompleteOrder(req.rpcParams);
     default:
       return err(`Unknown RPC: ${req.rpcName}`);
   }

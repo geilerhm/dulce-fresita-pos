@@ -25,7 +25,9 @@ import {
   Palette,
   Trash,
   Backspace,
+  Printer,
 } from "@phosphor-icons/react";
+import { buildKitchenTicket, printKitchenTicket } from "@/components/pos/KitchenTicket";
 import { SearchWithKeyboard } from "@/components/ui/SearchWithKeyboard";
 import { TextInputWithKeyboard } from "@/components/ui/TextInputWithKeyboard";
 import { useBackGesture } from "@/lib/hooks/useBackGesture";
@@ -500,8 +502,20 @@ export default function ProductosPage() {
             </div>
           </div>
 
-          {/* Edit button */}
+          {/* Actions */}
           <div className="p-4 border-t border-default-100 space-y-2">
+            {recipeRows.length > 0 && (
+              <button
+                onClick={async () => {
+                  const data = await buildKitchenTicket(0, [{ name: editProduct.name, product_id: editProduct.id, quantity: 1 }]);
+                  if (data.products.length > 0) printKitchenTicket(data);
+                  else toast.warning("Sin ingredientes");
+                }}
+                className="w-full h-12 rounded-2xl bg-amber-500 text-white text-sm font-bold shadow-lg shadow-amber-500/25 hover:brightness-105 active:scale-[0.97] transition-all flex items-center justify-center gap-2"
+              >
+                <Printer size={18} weight="bold" /> Imprimir Receta
+              </button>
+            )}
             <button onClick={() => openEdit()} className="w-full h-14 rounded-2xl bg-primary text-white text-base font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all flex items-center justify-center gap-2">
               <PencilSimple size={20} weight="bold" /> Editar producto
             </button>

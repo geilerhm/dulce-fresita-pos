@@ -11,7 +11,7 @@ import { Wallet, ClockCounterClockwise, Receipt } from "@phosphor-icons/react";
 const TABS = [
   { id: "actual", label: "Caja", Icon: Wallet },
   { id: "ventas", label: "Ventas", Icon: Receipt },
-  { id: "historial", label: "Historial", Icon: ClockCounterClockwise },
+  { id: "historial", label: "Historial Caja", Icon: ClockCounterClockwise },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];

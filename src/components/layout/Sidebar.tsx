@@ -17,6 +17,7 @@ import {
   WifiSlash,
   SquaresFour,
   Truck,
+  Motorcycle,
 } from "@phosphor-icons/react";
 import { useOnlineStatus } from "@/lib/hooks/useOffline";
 import { playClick } from "@/lib/utils/sounds";
@@ -28,6 +29,7 @@ import { Strawberry } from "@/lib/utils/fruit-icons";
 const NAV_TOP = [
   { href: "/pos", label: "Vender", Icon: Storefront },
   { href: "/caja", label: "Caja", Icon: Wallet },
+  { href: "/pedidos", label: "Pedidos", Icon: Motorcycle },
   { href: "/productos", label: "Productos", Icon: Tag },
   { href: "/inventario", label: "Inventario", Icon: Package },
   { href: "/categorias", label: "Categorías", Icon: SquaresFour },

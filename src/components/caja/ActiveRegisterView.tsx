@@ -24,7 +24,9 @@ export function ActiveRegisterView() {
           <div className="flex items-center gap-3">
             <span className="flex h-3 w-3 rounded-full bg-emerald-500 animate-pulse" />
             <div>
-              <p className="text-sm font-bold text-emerald-800">Caja abierta</p>
+              <p className="text-sm font-bold text-emerald-800">
+                Caja abierta{register.opened_by ? ` — ${register.opened_by}` : ""}
+              </p>
               <p className="text-xs text-emerald-600 flex items-center gap-1">
                 <Clock size={12} />
                 Desde {formatTime(register.opened_at)} — Base: {formatCOP(register.initial_cash)}

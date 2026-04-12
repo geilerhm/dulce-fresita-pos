@@ -6,9 +6,10 @@ import { Money, DeviceMobile, Backspace, ArrowLeft, Prohibit, Check, CheckCircle
 import { printReceipt, type ReceiptData } from "./Receipt";
 import { useAuth } from "@/contexts/AuthContext";
 import { VoidSaleModal } from "@/components/caja/VoidSaleModal";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/db/client";
 import { playSuccess, playAdd, playClick, playError } from "@/lib/utils/sounds";
+import { pickRandomBlessing } from "@/lib/utils/blessing-phrases";
 import { toast } from "@/lib/utils/toast";
 import { useCaja } from "@/contexts/CajaContext";
 import { getActiveCompanyId } from "@/lib/db/company";
@@ -53,6 +54,7 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
   const [processing, setProcessing] = useState(false);
   const [success, setSuccess] = useState<SuccessData | null>(null);
   const [showVoid, setShowVoid] = useState(false);
+  const blessing = useMemo(() => pickRandomBlessing(), []);
 
   const change = receivedAmount - total;
   const mainItems = items.filter((i) => !isAddon(i.name, i.category_slug));
@@ -120,7 +122,7 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
         paymentMethod, received: receivedAmount,
         items: saleItems.map(i => ({ name: i.product_name, quantity: i.quantity, unitPrice: i.unit_price, subtotal: i.subtotal })),
       });
-      setTimeout(() => { setSuccess(null); onClose(); }, 2000);
+      // No auto-close — user decides when to close (may want to print receipt or comanda)
     } catch (error) {
       console.error(error);
       toast.error("Error al procesar la venta");
@@ -144,7 +146,7 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
       paymentMethod: success.paymentMethod,
       received: success.received,
       change: success.change,
-      cashierName: displayName || undefined,
+      cashierName: register?.opened_by || displayName || undefined,
     };
     printReceipt(receiptData);
   }
@@ -163,6 +165,7 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
             {success.change > 0 && (
               <p className="text-xl text-default-500 tabular-nums">Cambio: {formatCOP(success.change)}</p>
             )}
+            <p className="text-lg italic text-default-400 mt-2 max-w-xs">&ldquo;{blessing}&rdquo;</p>
             <div className="flex gap-3 mt-4">
               <button onClick={handlePrint}
                 className="flex items-center gap-2 h-14 px-8 rounded-2xl bg-primary text-white text-base font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all">

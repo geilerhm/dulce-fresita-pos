@@ -276,19 +276,36 @@ export async function POST(request: Request) {
       }
     }
 
-    // ════════════════ BLESSING (Font B + italic attempt) ════════════════
-    // Random motivational phrase, picked by the client per print.
-    // Font B is narrower (~42 chars on an 80mm printer where Font A is 32).
-    // ESC 4 / ESC 5 toggle italic mode — supported by some ESC/POS printers,
-    // silently ignored by others. If italic isn't rendered, the Font B size
-    // still differentiates the blessing visually.
+    // ════════════════ BLESSING ════════════════
     if (data.blessingMessage) {
       const clean = stripEmoji(data.blessingMessage);
       if (clean) {
+        const quoted = `"${clean}"`;
+        const FONT_B_WIDTH = 42;
+        // Word-wrap into lines that fit Font B width
+        const words = quoted.split(" ");
+        const lines: string[] = [];
+        let current = "";
+        for (const word of words) {
+          const test = current ? `${current} ${word}` : word;
+          if (test.length <= FONT_B_WIDTH) {
+            current = test;
+          } else {
+            if (current) lines.push(current);
+            current = word;
+          }
+        }
+        if (current) lines.push(current);
+
+        printer.newLine();
         printer.setTypeFontB();
+        printer.append(Buffer.from([0x1B, 0x61, 0x01])); // ESC a 1 — hardware center
         printer.append(Buffer.from([0x1B, 0x34])); // ESC 4 — italic on
-        printer.println(center(clean, 42));
+        for (const line of lines) {
+          printer.println(line);
+        }
         printer.append(Buffer.from([0x1B, 0x35])); // ESC 5 — italic off
+        printer.append(Buffer.from([0x1B, 0x61, 0x00])); // ESC a 0 — back to left
         printer.setTypeFontA();
       }
     }

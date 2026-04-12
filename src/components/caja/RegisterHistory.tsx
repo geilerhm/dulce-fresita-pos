@@ -10,6 +10,7 @@ interface HistoryItem {
   id: string;
   opened_at: string;
   closed_at: string;
+  opened_by: string | null;
   initial_cash: number;
   final_cash_expected: number;
   final_cash_actual: number;
@@ -92,7 +93,12 @@ export function RegisterHistory() {
           <div key={item.id} className="rounded-2xl bg-white border border-default-100 p-5 hover:shadow-sm transition-shadow">
             {/* Date and time */}
             <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-bold text-default-800">{formatDate(item.closed_at)}</p>
+              <div>
+                <p className="text-sm font-bold text-default-800">{formatDate(item.closed_at)}</p>
+                {item.opened_by && (
+                  <p className="text-xs text-default-400">Cajero: {item.opened_by}</p>
+                )}
+              </div>
               <p className="text-xs text-default-400 tabular-nums">
                 {formatTime(item.opened_at)} — {formatTime(item.closed_at)}
               </p>

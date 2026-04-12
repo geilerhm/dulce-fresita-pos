@@ -290,7 +290,7 @@ export default function SettingsPage() {
                   style={{ width: "302px", fontFamily: "'Courier New', monospace", fontSize: "12px" }}
                 >
                   <div style={{ textAlign: "center", marginBottom: "8px" }}>
-                    {receiptConfig.showLogo && <div style={{ fontSize: "20px" }}>🍓</div>}
+                    {receiptConfig.showLogo && <div className="flex justify-center mb-1"><Strawberry size={28} className="text-black" /></div>}
                     <div style={{ fontSize: "14px", fontWeight: "bold" }}>{activeCompany?.name || "Dulce Fresita"}</div>
                     {receiptConfig.phone && <div style={{ fontSize: "9px", color: "#888" }}>Tel: {receiptConfig.phone}</div>}
                   </div>

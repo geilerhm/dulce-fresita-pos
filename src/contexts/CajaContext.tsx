@@ -8,12 +8,13 @@ interface OpenRegister {
   id: string;
   opened_at: string;
   initial_cash: number;
+  opened_by: string | null;
 }
 
 interface CajaContextValue {
   register: OpenRegister | null;
   loading: boolean;
-  openRegister: (initialCash: number) => Promise<void>;
+  openRegister: (initialCash: number, cashierName?: string) => Promise<void>;
   closeRegister: (data: { final_cash_expected: number; final_cash_actual: number; notes?: string }) => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -31,14 +32,14 @@ export function CajaProvider({ children }: { children: ReactNode }) {
 
     const { data } = await client
       .from("cash_registers")
-      .select("id, opened_at, initial_cash")
+      .select("id, opened_at, initial_cash, opened_by")
       .eq("status", "open")
       .eq("company_id", companyId)
       .order("opened_at", { ascending: false })
       .limit(1);
 
     const row = data?.[0] ?? null;
-    const reg = row ? { id: row.id, opened_at: row.opened_at, initial_cash: row.initial_cash } : null;
+    const reg = row ? { id: row.id, opened_at: row.opened_at, initial_cash: row.initial_cash, opened_by: row.opened_by ?? null } : null;
     setRegister(reg);
     setLoading(false);
   }, []);
@@ -60,7 +61,7 @@ export function CajaProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval);
   }, [refresh]);
 
-  const openRegister = useCallback(async (initialCash: number) => {
+  const openRegister = useCallback(async (initialCash: number, cashierName?: string) => {
     const client = createClient();
 
     const companyId = getActiveCompanyId();
@@ -78,12 +79,12 @@ export function CajaProvider({ children }: { children: ReactNode }) {
 
     const { data, error } = await client
       .from("cash_registers")
-      .insert({ initial_cash: initialCash, status: "open", company_id: getActiveCompanyId() })
-      .select("id, opened_at, initial_cash")
+      .insert({ initial_cash: initialCash, status: "open", opened_by: cashierName || null, company_id: getActiveCompanyId() })
+      .select("id, opened_at, initial_cash, opened_by")
       .single();
 
     if (error) throw error;
-    const reg = { id: data.id, opened_at: data.opened_at, initial_cash: data.initial_cash };
+    const reg = { id: data.id, opened_at: data.opened_at, initial_cash: data.initial_cash, opened_by: data.opened_by ?? null };
     setRegister(reg);
   }, [refresh]);
 
