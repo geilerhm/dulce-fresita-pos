@@ -5,41 +5,6 @@ const http = require("http");
 const fs = require("fs");
 const net = require("net");
 
-// ── Logging to file ──
-const logDir = path.join(app.getPath("userData"), "logs");
-if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
-const logFile = path.join(logDir, "app.log");
-const logStream = fs.createWriteStream(logFile, { flags: "a" });
-
-function log(msg) {
-  const line = `[${new Date().toISOString()}] ${msg}`;
-  console.log(line);
-  logStream.write(line + "\n");
-}
-
-process.on("uncaughtException", (err) => {
-  log(`UNCAUGHT: ${err.stack || err.message}`);
-});
-
-/** Recursively copy a directory */
-function copyDirSync(src, dest) {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-    if (entry.isDirectory()) {
-      copyDirSync(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
-}
-
-log(`App starting — version ${app.getVersion()}`);
-log(`userData: ${app.getPath("userData")}`);
-log(`resourcesPath: ${process.resourcesPath || "N/A (dev)"}`);
-log(`isPackaged: ${app.isPackaged}`);
-
 let mainWindow = null;
 let serverProcess = null;
 let serverPort = 3456;
@@ -55,21 +20,84 @@ app.on("second-instance", () => {
   }
 });
 
-// Paths
-function getDataDir() {
-  return path.join(app.getPath("userData"), "data");
+// ── Logging ──
+const logDir = path.join(app.getPath("userData"), "logs");
+if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+const logFile = path.join(logDir, "app.log");
+// Truncate log on each start (keep only current session)
+const logStream = fs.createWriteStream(logFile, { flags: "w" });
+
+function log(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}`;
+  console.log(line);
+  logStream.write(line + "\n");
 }
 
-function getServerDir() {
-  // In packaged app, resources are in app.asar or extraResources
-  const isPacked = app.isPackaged;
-  if (isPacked) {
+process.on("uncaughtException", (err) => {
+  log(`UNCAUGHT: ${err.stack || err.message}`);
+});
+
+log(`App starting — version ${app.getVersion()}`);
+log(`isPackaged: ${app.isPackaged}`);
+
+// ── Paths ──
+const dataDir = path.join(app.getPath("userData"), "data");
+const runtimeDir = path.join(app.getPath("userData"), "server");
+
+function getSourceDir() {
+  if (app.isPackaged) {
     return path.join(process.resourcesPath, "standalone");
   }
   return path.join(__dirname, "..", ".next", "standalone");
 }
 
-// Find a free port
+/** Recursively copy directory, renaming _node_modules → node_modules */
+function copyDirSync(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const srcName = entry.name;
+    // Rename _node_modules back to node_modules
+    const destName = srcName === "_node_modules" ? "node_modules" : srcName;
+    const srcPath = path.join(src, srcName);
+    const destPath = path.join(dest, destName);
+    if (entry.isDirectory()) {
+      copyDirSync(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+/** Check if we need to re-extract (first run or version changed) */
+function needsExtract() {
+  const versionFile = path.join(runtimeDir, ".version");
+  if (!fs.existsSync(versionFile)) return true;
+  const installed = fs.readFileSync(versionFile, "utf-8").trim();
+  return installed !== app.getVersion();
+}
+
+/** Extract standalone to writable userData directory */
+function extractStandalone() {
+  const sourceDir = getSourceDir();
+  log(`Extracting standalone from ${sourceDir} → ${runtimeDir}`);
+
+  // Remove old version
+  if (fs.existsSync(runtimeDir)) {
+    fs.rmSync(runtimeDir, { recursive: true, force: true });
+  }
+
+  copyDirSync(sourceDir, runtimeDir);
+
+  // Write version marker
+  fs.writeFileSync(path.join(runtimeDir, ".version"), app.getVersion());
+
+  // Verify
+  const nmExists = fs.existsSync(path.join(runtimeDir, "node_modules"));
+  const nextExists = fs.existsSync(path.join(runtimeDir, "node_modules", "next"));
+  log(`Extraction done. node_modules: ${nmExists}, next: ${nextExists}`);
+}
+
+// ── Server ──
 function findFreePort() {
   return new Promise((resolve) => {
     const srv = net.createServer();
@@ -80,7 +108,6 @@ function findFreePort() {
   });
 }
 
-// Wait for server to be ready
 function waitForServer(port, retries = 60) {
   return new Promise((resolve, reject) => {
     let attempts = 0;
@@ -102,72 +129,41 @@ function waitForServer(port, retries = 60) {
 }
 
 async function startServer() {
-  const dataDir = getDataDir();
-  log(`dataDir: ${dataDir}`);
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
   }
 
-  serverPort = await findFreePort();
-  log(`port: ${serverPort}`);
-
-  const serverDir = getServerDir();
-  log(`serverDir: ${serverDir}`);
-  log(`serverDir exists: ${fs.existsSync(serverDir)}`);
-
-  const serverScript = path.join(serverDir, "server.js");
-  log(`serverScript: ${serverScript}`);
-  log(`serverScript exists: ${fs.existsSync(serverScript)}`);
-
-  // Restore _node_modules → node_modules
-  // Program Files is read-only, so we copy to userData instead
-  const nmPath = path.join(serverDir, "node_modules");
-  const hiddenNmPath = path.join(serverDir, "_node_modules");
-  const userNmPath = path.join(dataDir, "_standalone_nm");
-
-  if (!fs.existsSync(nmPath) && fs.existsSync(hiddenNmPath)) {
-    // Copy _node_modules to userData (writable) and create a junction/symlink
-    if (!fs.existsSync(userNmPath)) {
-      log(`Copying _node_modules to ${userNmPath} (first run)...`);
-      copyDirSync(hiddenNmPath, userNmPath);
-      log("Copy complete");
-    }
+  // Extract standalone to writable location (first run or update)
+  if (needsExtract()) {
+    log("Extracting standalone (first run or update)...");
     try {
-      // Create junction (Windows symlink for directories, no admin needed)
-      fs.symlinkSync(userNmPath, nmPath, "junction");
-      log("Created junction: node_modules → " + userNmPath);
+      extractStandalone();
     } catch (e) {
-      log(`Junction failed: ${e.message}, trying direct NODE_PATH`);
+      log(`FATAL extraction error: ${e.message}`);
+      dialog.showErrorBox("Error", `No se pudo extraer la app:\n${e.message}\n\nLogs: ${logFile}`);
+      app.quit();
+      return;
     }
+  } else {
+    log("Standalone already extracted, skipping");
   }
 
-  // Log what's in the server directory
-  try {
-    const files = fs.readdirSync(serverDir);
-    log(`serverDir contents: ${files.join(", ")}`);
-    const nmPath = path.join(serverDir, "node_modules");
-    if (fs.existsSync(nmPath)) {
-      const mods = fs.readdirSync(nmPath);
-      log(`node_modules count: ${mods.length}`);
-      log(`node_modules has 'next': ${mods.includes("next")}`);
-      log(`node_modules first 10: ${mods.slice(0, 10).join(", ")}`);
-    } else {
-      log(`node_modules NOT FOUND at ${nmPath}`);
-    }
-  } catch (e) {
-    log(`Error reading serverDir: ${e.message}`);
-  }
+  serverPort = await findFreePort();
+  log(`Port: ${serverPort}`);
+
+  const serverScript = path.join(runtimeDir, "server.js");
+  log(`Server: ${serverScript}`);
+  log(`Server exists: ${fs.existsSync(serverScript)}`);
+
+  // Verify node_modules
+  const nmCheck = path.join(runtimeDir, "node_modules", "next");
+  log(`next module exists: ${fs.existsSync(nmCheck)}`);
 
   if (!fs.existsSync(serverScript)) {
-    log("FATAL: Server script not found");
-    dialog.showErrorBox("Error", `server.js no encontrado en:\n${serverScript}\n\nLogs: ${logFile}`);
+    dialog.showErrorBox("Error", `server.js no encontrado\n\nLogs: ${logFile}`);
     app.quit();
     return;
   }
-
-  // Determine where node_modules lives
-  const actualNmPath = fs.existsSync(nmPath) ? nmPath : (fs.existsSync(userNmPath) ? userNmPath : hiddenNmPath);
-  log(`NODE_PATH will use: ${actualNmPath}`);
 
   const env = {
     ...process.env,
@@ -175,13 +171,12 @@ async function startServer() {
     HOSTNAME: "127.0.0.1",
     DULCE_DB_PATH: dataDir,
     NODE_ENV: "production",
-    NODE_PATH: actualNmPath,
   };
 
-  log(`Spawning: ${process.execPath} ${serverScript}`);
+  log("Starting server...");
 
   serverProcess = spawn(process.execPath, [serverScript], {
-    cwd: serverDir,
+    cwd: runtimeDir,
     env,
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -191,7 +186,7 @@ async function startServer() {
   serverProcess.on("exit", (code) => {
     log(`[server] exited with code ${code}`);
     if (code !== 0 && code !== null) {
-      dialog.showErrorBox("Error", `El servidor se cerró con código ${code}\n\nLogs: ${logFile}`);
+      dialog.showErrorBox("Error", `El servidor falló (código ${code})\n\nLogs: ${logFile}`);
     }
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.loadURL("about:blank");
@@ -224,7 +219,6 @@ function createWindow() {
     mainWindow.show();
   });
 
-  // Open external links in browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };
@@ -235,13 +229,13 @@ function createWindow() {
   });
 }
 
-// ── Auto-updater (lazy loaded — app works even if module is missing) ──
+// ── Auto-updater (lazy loaded) ──
 function setupAutoUpdater() {
   let autoUpdater;
   try {
     autoUpdater = require("electron-updater").autoUpdater;
   } catch (e) {
-    log(`[updater] electron-updater not available: ${e.message}`);
+    log(`[updater] Not available: ${e.message}`);
     return;
   }
 
@@ -249,61 +243,47 @@ function setupAutoUpdater() {
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on("update-available", (info) => {
-    console.log("[updater] Update available:", info.version);
-    if (mainWindow) {
-      mainWindow.webContents.executeJavaScript(
-        `document.title = "Dulce Fresita — Actualizando..."`
-      );
-    }
+    log(`[updater] Update available: ${info.version}`);
   });
 
   autoUpdater.on("update-downloaded", (info) => {
-    console.log("[updater] Update downloaded:", info.version);
+    log(`[updater] Downloaded: ${info.version}`);
     dialog.showMessageBox(mainWindow, {
       type: "info",
       title: "Actualización lista",
-      message: `Nueva versión ${info.version} descargada. La app se reiniciará para actualizar.`,
+      message: `Nueva versión ${info.version} descargada. La app se reiniciará.`,
       buttons: ["Reiniciar ahora", "Después"],
     }).then((result) => {
-      if (result.response === 0) {
-        autoUpdater.quitAndInstall();
-      }
+      if (result.response === 0) autoUpdater.quitAndInstall();
     });
   });
 
   autoUpdater.on("error", (err) => {
-    console.warn("[updater] Error:", err.message);
+    log(`[updater] Error: ${err.message}`);
   });
 
-  // Check now and every 30 minutes
   autoUpdater.checkForUpdates().catch(() => {});
-  setInterval(() => {
-    autoUpdater.checkForUpdates().catch(() => {});
-  }, 30 * 60 * 1000);
+  setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 30 * 60 * 1000);
 }
 
+// ── Start ──
 app.whenReady().then(async () => {
   try {
     await startServer();
     createWindow();
     setupAutoUpdater();
   } catch (err) {
-    console.error("Failed to start:", err);
+    log(`FATAL: ${err.stack || err.message}`);
+    dialog.showErrorBox("Error", `No se pudo iniciar:\n${err.message}\n\nLogs: ${logFile}`);
     app.quit();
   }
 });
 
 app.on("window-all-closed", () => {
-  if (serverProcess) {
-    serverProcess.kill();
-    serverProcess = null;
-  }
+  if (serverProcess) { serverProcess.kill(); serverProcess = null; }
   app.quit();
 });
 
 app.on("before-quit", () => {
-  if (serverProcess) {
-    serverProcess.kill();
-    serverProcess = null;
-  }
+  if (serverProcess) { serverProcess.kill(); serverProcess = null; }
 });
