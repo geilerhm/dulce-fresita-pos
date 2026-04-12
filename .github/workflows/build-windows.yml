@@ -23,15 +23,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Build Next.js FIRST (while native modules are compiled for Node 22)
+      - name: Verify better-sqlite3 ABI
+        shell: cmd
+        run: node -e "console.log('Node ABI:', process.versions.modules)"
+
       - name: Build Next.js
         run: npm run build
         env:
           NEXT_TURBOPACK: "0"
 
-      # Now rebuild native modules for Electron (only affects main node_modules)
-      - name: Rebuild native modules for Electron
-        run: npx electron-builder install-app-deps
+      - name: Verify standalone better-sqlite3
+        shell: bash
+        run: |
+          echo "=== Checking standalone .next/node_modules ==="
+          find .next/standalone/.next/node_modules -name "better_sqlite3.node" 2>/dev/null | head -5
+          echo "=== Checking standalone node_modules ==="
+          find .next/standalone/node_modules -name "better_sqlite3.node" 2>/dev/null | head -5
+          echo "=== Testing module loads ==="
+          node -e "require('.next/standalone/node_modules/better-sqlite3'); console.log('ROOT: OK')" || echo "ROOT: FAILED"
 
       - name: Prepare standalone
         shell: cmd
@@ -48,12 +57,12 @@ jobs:
           mkdir ".next\standalone\_portable_node"
           copy "node-v22.16.0-win-x64\node.exe" ".next\standalone\_portable_node\node.exe"
 
-      - name: Build Electron & Publish
+      - name: Build Electron (skip native module rebuild)
         run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish draft release
+      - name: Publish release
         run: gh release edit ${{ github.ref_name }} --draft=false
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
