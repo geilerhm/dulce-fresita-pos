@@ -1,4 +1,5 @@
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, shell, dialog } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const { spawn } = require("child_process");
 const path = require("path");
 const http = require("http");
@@ -142,10 +143,50 @@ function createWindow() {
   });
 }
 
+// ── Auto-updater ──
+function setupAutoUpdater() {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("update-available", (info) => {
+    console.log("[updater] Update available:", info.version);
+    if (mainWindow) {
+      mainWindow.webContents.executeJavaScript(
+        `document.title = "Dulce Fresita — Actualizando..."`
+      );
+    }
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    console.log("[updater] Update downloaded:", info.version);
+    dialog.showMessageBox(mainWindow, {
+      type: "info",
+      title: "Actualización lista",
+      message: `Nueva versión ${info.version} descargada. La app se reiniciará para actualizar.`,
+      buttons: ["Reiniciar ahora", "Después"],
+    }).then((result) => {
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall();
+      }
+    });
+  });
+
+  autoUpdater.on("error", (err) => {
+    console.warn("[updater] Error:", err.message);
+  });
+
+  // Check now and every 30 minutes
+  autoUpdater.checkForUpdates().catch(() => {});
+  setInterval(() => {
+    autoUpdater.checkForUpdates().catch(() => {});
+  }, 30 * 60 * 1000);
+}
+
 app.whenReady().then(async () => {
   try {
     await startServer();
     createWindow();
+    setupAutoUpdater();
   } catch (err) {
     console.error("Failed to start:", err);
     app.quit();

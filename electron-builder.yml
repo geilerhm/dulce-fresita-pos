@@ -2,6 +2,11 @@ appId: com.dulcefresita.app
 productName: Dulce Fresita
 copyright: Copyright 2026 Dulce Fresita
 
+publish:
+  provider: github
+  owner: geilerhm
+  repo: dulce-fresita-pos
+
 directories:
   output: dist-electron
 
