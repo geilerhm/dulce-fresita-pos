@@ -133,6 +133,19 @@ async function startServer() {
     fs.mkdirSync(dataDir, { recursive: true });
   }
 
+  // Copy seed database if no local database exists (first install)
+  const dbFile = path.join(dataDir, "dulce-fresita.db");
+  if (!fs.existsSync(dbFile)) {
+    const seedDb = path.join(runtimeDir, "scripts", "seed-database.db");
+    if (fs.existsSync(seedDb)) {
+      log("Copying seed database (first install)...");
+      fs.copyFileSync(seedDb, dbFile);
+      log("Seed database copied");
+    } else {
+      log("No seed database found — starting fresh");
+    }
+  }
+
   // Extract standalone to writable location (first run or update)
   if (needsExtract()) {
     log("Extracting standalone (first run or update)...");
