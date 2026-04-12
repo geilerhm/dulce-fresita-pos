@@ -173,9 +173,13 @@ async function startServer() {
     NODE_ENV: "production",
   };
 
+  // Use portable node.exe (bundled) instead of Electron's process
+  const portableNode = path.join(runtimeDir, "_portable_node", "node.exe");
+  const nodeExe = fs.existsSync(portableNode) ? portableNode : process.execPath;
+  log(`Node executable: ${nodeExe} (portable: ${fs.existsSync(portableNode)})`);
   log("Starting server...");
 
-  serverProcess = spawn(process.execPath, [serverScript], {
+  serverProcess = spawn(nodeExe, [serverScript], {
     cwd: runtimeDir,
     env,
     stdio: ["ignore", "pipe", "pipe"],

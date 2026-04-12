@@ -41,6 +41,16 @@ jobs:
           dir ".next\standalone"
           dir ".next\standalone\_node_modules" /B | findstr /C:"next"
 
+      - name: Download portable Node.js for bundling
+        shell: cmd
+        run: |
+          curl -Lo node.zip https://nodejs.org/dist/v22.16.0/node-v22.16.0-win-x64.zip
+          tar -xf node.zip
+          mkdir ".next\standalone\_portable_node"
+          copy "node-v22.16.0-win-x64\node.exe" ".next\standalone\_portable_node\node.exe"
+          echo === Portable node ===
+          dir ".next\standalone\_portable_node"
+
       - name: Build Electron & Publish
         run: npx electron-builder --win --publish always
         env:
