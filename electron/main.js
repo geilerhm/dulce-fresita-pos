@@ -21,6 +21,20 @@ process.on("uncaughtException", (err) => {
   log(`UNCAUGHT: ${err.stack || err.message}`);
 });
 
+/** Recursively copy a directory */
+function copyDirSync(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDirSync(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
 log(`App starting — version ${app.getVersion()}`);
 log(`userData: ${app.getPath("userData")}`);
 log(`resourcesPath: ${process.resourcesPath || "N/A (dev)"}`);
@@ -105,13 +119,26 @@ async function startServer() {
   log(`serverScript: ${serverScript}`);
   log(`serverScript exists: ${fs.existsSync(serverScript)}`);
 
-  // Restore _node_modules → node_modules (renamed to bypass electron-builder filter)
+  // Restore _node_modules → node_modules
+  // Program Files is read-only, so we copy to userData instead
   const nmPath = path.join(serverDir, "node_modules");
   const hiddenNmPath = path.join(serverDir, "_node_modules");
+  const userNmPath = path.join(dataDir, "_standalone_nm");
+
   if (!fs.existsSync(nmPath) && fs.existsSync(hiddenNmPath)) {
-    log("Restoring _node_modules → node_modules");
-    fs.renameSync(hiddenNmPath, nmPath);
-    log("node_modules restored successfully");
+    // Copy _node_modules to userData (writable) and create a junction/symlink
+    if (!fs.existsSync(userNmPath)) {
+      log(`Copying _node_modules to ${userNmPath} (first run)...`);
+      copyDirSync(hiddenNmPath, userNmPath);
+      log("Copy complete");
+    }
+    try {
+      // Create junction (Windows symlink for directories, no admin needed)
+      fs.symlinkSync(userNmPath, nmPath, "junction");
+      log("Created junction: node_modules → " + userNmPath);
+    } catch (e) {
+      log(`Junction failed: ${e.message}, trying direct NODE_PATH`);
+    }
   }
 
   // Log what's in the server directory
@@ -138,12 +165,17 @@ async function startServer() {
     return;
   }
 
+  // Determine where node_modules lives
+  const actualNmPath = fs.existsSync(nmPath) ? nmPath : (fs.existsSync(userNmPath) ? userNmPath : hiddenNmPath);
+  log(`NODE_PATH will use: ${actualNmPath}`);
+
   const env = {
     ...process.env,
     PORT: String(serverPort),
     HOSTNAME: "127.0.0.1",
     DULCE_DB_PATH: dataDir,
     NODE_ENV: "production",
+    NODE_PATH: actualNmPath,
   };
 
   log(`Spawning: ${process.execPath} ${serverScript}`);
