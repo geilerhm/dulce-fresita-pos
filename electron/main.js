@@ -1,5 +1,4 @@
 const { app, BrowserWindow, shell, dialog } = require("electron");
-const { autoUpdater } = require("electron-updater");
 const { spawn } = require("child_process");
 const path = require("path");
 const http = require("http");
@@ -195,8 +194,16 @@ function createWindow() {
   });
 }
 
-// ── Auto-updater ──
+// ── Auto-updater (lazy loaded — app works even if module is missing) ──
 function setupAutoUpdater() {
+  let autoUpdater;
+  try {
+    autoUpdater = require("electron-updater").autoUpdater;
+  } catch (e) {
+    log(`[updater] electron-updater not available: ${e.message}`);
+    return;
+  }
+
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
