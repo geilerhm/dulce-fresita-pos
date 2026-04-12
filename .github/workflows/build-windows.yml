@@ -31,6 +31,16 @@ jobs:
         env:
           NEXT_TURBOPACK: "0"
 
+      - name: Prepare standalone with static + public
+        shell: bash
+        run: |
+          cp -r .next/static .next/standalone/.next/static
+          cp -r public .next/standalone/public
+          echo "Standalone contents:"
+          ls -la .next/standalone/
+          echo "node_modules contents:"
+          ls .next/standalone/node_modules/ | head -20
+
       - name: Build Electron & Publish
         run: npx electron-builder --win --publish always
         env:
