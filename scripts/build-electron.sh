@@ -12,10 +12,9 @@ echo "→ Copying static files..."
 cp -r .next/static .next/standalone/.next/static
 cp -r public .next/standalone/public
 
-# 3. Create standalone-bundle (electron-builder reads from here)
-echo "→ Creating standalone bundle..."
-rm -rf standalone-bundle
-cp -r .next/standalone standalone-bundle
+# 3. Rename node_modules to bypass electron-builder filter
+echo "→ Renaming node_modules → _node_modules..."
+mv .next/standalone/node_modules .next/standalone/_node_modules
 
 # 4. Package with electron-builder
 echo "→ Packaging with Electron..."

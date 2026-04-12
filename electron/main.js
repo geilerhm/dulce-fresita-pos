@@ -105,6 +105,15 @@ async function startServer() {
   log(`serverScript: ${serverScript}`);
   log(`serverScript exists: ${fs.existsSync(serverScript)}`);
 
+  // Restore _node_modules → node_modules (renamed to bypass electron-builder filter)
+  const nmPath = path.join(serverDir, "node_modules");
+  const hiddenNmPath = path.join(serverDir, "_node_modules");
+  if (!fs.existsSync(nmPath) && fs.existsSync(hiddenNmPath)) {
+    log("Restoring _node_modules → node_modules");
+    fs.renameSync(hiddenNmPath, nmPath);
+    log("node_modules restored successfully");
+  }
+
   // Log what's in the server directory
   try {
     const files = fs.readdirSync(serverDir);

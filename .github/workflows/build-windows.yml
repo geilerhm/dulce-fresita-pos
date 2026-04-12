@@ -31,27 +31,15 @@ jobs:
         env:
           NEXT_TURBOPACK: "0"
 
-      - name: Prepare standalone with static + public
-        shell: bash
+      - name: Prepare standalone
+        shell: cmd
         run: |
-          cp -r .next/static .next/standalone/.next/static
-          cp -r public .next/standalone/public
-          echo "=== Standalone contents ==="
-          ls -la .next/standalone/
-          echo "=== node_modules check ==="
-          ls .next/standalone/node_modules/ | head -20
-          echo "=== node_modules/next exists? ==="
-          ls .next/standalone/node_modules/next/package.json && echo "YES" || echo "NO"
-
-      - name: Bundle standalone into a single folder
-        shell: bash
-        run: |
-          mkdir -p standalone-bundle
-          cp -r .next/standalone/* standalone-bundle/
-          echo "=== Bundle contents ==="
-          ls standalone-bundle/
-          echo "=== Bundle node_modules ==="
-          ls standalone-bundle/node_modules/ | head -10
+          xcopy /E /I /H /Y ".next\static" ".next\standalone\.next\static"
+          xcopy /E /I /H /Y "public" ".next\standalone\public"
+          echo === Rename node_modules to bypass electron-builder filter ===
+          ren ".next\standalone\node_modules" "_node_modules"
+          dir ".next\standalone"
+          dir ".next\standalone\_node_modules" /B | findstr /C:"next"
 
       - name: Build Electron & Publish
         run: npx electron-builder --win --publish always
