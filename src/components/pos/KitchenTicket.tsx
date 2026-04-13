@@ -82,7 +82,7 @@ function formatQty(qty: number, unit: string): string {
 }
 
 /** Browser fallback — print via popup */
-function printKitchenBrowser(data: KitchenTicketData) {
+async function printKitchenBrowser(data: KitchenTicketData) {
   const productsHtml = data.products
     .map(
       (p) => `
@@ -128,6 +128,15 @@ function printKitchenBrowser(data: KitchenTicketData) {
 </body>
 </html>`;
 
+  // Try Electron silent print
+  const api = (window as any).electronAPI;
+  const printer = (() => { try { return localStorage.getItem("dulce-fresita-printer"); } catch { return null; } })();
+  if (api?.isElectron && printer) {
+    const result = await api.printSilent(html, printer);
+    if (result.success) return;
+  }
+
+  // Fallback: iframe
   const oldFrame = document.getElementById("print-frame-kitchen");
   if (oldFrame) oldFrame.remove();
 

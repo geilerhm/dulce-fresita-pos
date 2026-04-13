@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, dialog } = require("electron");
+const { app, BrowserWindow, shell, dialog, ipcMain } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const http = require("http");
@@ -268,6 +268,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(__dirname, "preload.js"),
     },
     autoHideMenuBar: true,
     show: false,
@@ -325,6 +326,46 @@ function setupAutoUpdater() {
   autoUpdater.checkForUpdates().catch(() => {});
   setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 30 * 60 * 1000);
 }
+
+// ── IPC: Printing ──
+ipcMain.handle("get-printers", async () => {
+  if (!mainWindow) return [];
+  const printers = await mainWindow.webContents.getPrintersAsync();
+  return printers.map((p) => ({ name: p.name, isDefault: p.isDefault }));
+});
+
+ipcMain.handle("print-silent", async (_event, html, printerName) => {
+  return new Promise((resolve) => {
+    const printWin = new BrowserWindow({
+      show: false,
+      width: 300,
+      height: 800,
+      webPreferences: { nodeIntegration: false, contextIsolation: true },
+    });
+
+    printWin.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
+
+    printWin.webContents.on("did-finish-load", () => {
+      const options = {
+        silent: true,
+        printBackground: true,
+        margins: { marginType: "none" },
+      };
+      if (printerName) options.deviceName = printerName;
+
+      printWin.webContents.print(options, (success, failureReason) => {
+        printWin.close();
+        if (success) {
+          log(`[print] Printed to ${printerName || "default"}`);
+          resolve({ success: true });
+        } else {
+          log(`[print] Failed: ${failureReason}`);
+          resolve({ success: false, error: failureReason });
+        }
+      });
+    });
+  });
+});
 
 // ── Start ──
 app.whenReady().then(async () => {

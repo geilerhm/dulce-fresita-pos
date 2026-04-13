@@ -172,6 +172,9 @@ export default function SettingsPage() {
                 <SignOut size={20} weight="bold" /> Cerrar sesión
               </button>
 
+              {/* Printer selector */}
+              <PrinterSelector />
+
               {/* Version + Update */}
               <UpdateChecker />
             </div>
@@ -395,6 +398,68 @@ export default function SettingsPage() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function PrinterSelector() {
+  const [printers, setPrinters] = useState<{ name: string; isDefault: boolean }[]>([]);
+  const [saved, setSaved] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const api = typeof window !== "undefined" ? (window as any).electronAPI : null;
+
+  useEffect(() => {
+    setSaved(localStorage.getItem("dulce-fresita-printer"));
+  }, []);
+
+  async function loadPrinters() {
+    if (!api?.isElectron) return;
+    setLoading(true);
+    const list = await api.getPrinters();
+    setPrinters(list);
+    setLoading(false);
+  }
+
+  function selectPrinter(name: string) {
+    localStorage.setItem("dulce-fresita-printer", name);
+    setSaved(name);
+    toast.success(`Impresora: ${name}`);
+  }
+
+  // Only show in Electron
+  if (!api?.isElectron) return null;
+
+  return (
+    <div className="rounded-2xl bg-white border border-default-100 p-5 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-default-50">
+            <Printer size={20} weight="duotone" className="text-default-400" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-default-800">Impresora</p>
+            <p className="text-xs text-default-400">{saved || "No seleccionada"}</p>
+          </div>
+        </div>
+        <button onClick={loadPrinters} disabled={loading}
+          className="flex items-center gap-2 h-10 px-4 rounded-xl bg-default-100 text-default-600 text-xs font-bold hover:bg-default-200 active:scale-95 transition-all disabled:opacity-50">
+          <ArrowsClockwise size={14} className={loading ? "animate-spin" : ""} />
+          {printers.length > 0 ? "Refrescar" : "Cargar impresoras"}
+        </button>
+      </div>
+
+      {printers.length > 0 && (
+        <div className="space-y-1.5">
+          {printers.map((p) => (
+            <button key={p.name} onClick={() => selectPrinter(p.name)}
+              className={`w-full flex items-center justify-between h-12 px-4 rounded-xl text-sm font-medium transition-all active:scale-[0.97]
+                ${saved === p.name ? "bg-primary/10 text-primary border-2 border-primary" : "bg-default-50 text-default-700 border border-default-100 hover:bg-default-100"}`}>
+              <span>{p.name}</span>
+              {saved === p.name && <Check size={18} weight="bold" />}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

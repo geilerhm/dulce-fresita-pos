@@ -110,11 +110,27 @@ function buildReceiptHtml(data: ReceiptData, config: ReceiptConfig, blessing?: s
 </html>`;
 }
 
-/** Print via hidden iframe (works in both browser and Electron). */
-function printReceiptBrowser(data: ReceiptData, config: ReceiptConfig, blessing?: string) {
+/** Get saved printer name from localStorage */
+function getSavedPrinter(): string | null {
+  try { return localStorage.getItem("dulce-fresita-printer"); } catch { return null; }
+}
+
+/** Print via Electron silent print (preferred) or iframe fallback */
+async function printReceiptBrowser(data: ReceiptData, config: ReceiptConfig, blessing?: string) {
   const html = buildReceiptHtml(data, config, blessing);
 
-  // Remove old print frame if exists
+  // Try Electron silent print first
+  const api = (window as any).electronAPI;
+  if (api?.isElectron) {
+    const printer = getSavedPrinter();
+    if (printer) {
+      const result = await api.printSilent(html, printer);
+      if (result.success) return;
+      console.warn("[print] Silent print failed:", result.error);
+    }
+  }
+
+  // Fallback: iframe print dialog
   const oldFrame = document.getElementById("print-frame");
   if (oldFrame) oldFrame.remove();
 
