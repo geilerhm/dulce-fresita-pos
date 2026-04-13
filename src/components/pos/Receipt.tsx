@@ -17,19 +17,32 @@ export interface ReceiptData {
   cashierName?: string;
 }
 
-function buildReceiptHtml(data: ReceiptData, config: ReceiptConfig, blessing?: string): string {
-  const itemsHtml = data.items.map(item => `
-    <tr>
-      <td style="text-align:left;padding:2px 0;">
-        ${item.quantity > 1 ? `${item.quantity}x ` : ""}${item.name}
-      </td>
-      <td style="text-align:right;padding:2px 0;white-space:nowrap;">
-        ${formatCOP(item.subtotal)}
-      </td>
-    </tr>
-  `).join("");
+// Strawberry SVG icon inline (same as fruit-icons.tsx but as raw SVG string)
+const STRAWBERRY_SVG = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="m17 7 3.5-3.5"/><path d="M17 2v5h5"/>
+  <path d="M2.1 17.1a4 4 0 0 0 4.8 4.8l9-2.1a6.32 6.32 0 0 0 2.9-10.9L15 5.2A6.5 6.5 0 0 0 4.1 8.3Z"/>
+  <path d="M8.5 9.5h.01"/><path d="M12.5 8.5h.01"/><path d="M7.5 13.5h.01"/>
+  <path d="M11.5 12.5h.01"/><path d="M15.5 11.5h.01"/><path d="M6.5 17.5h.01"/>
+  <path d="M10.5 16.5h.01"/><path d="M14.5 15.5h.01"/>
+</svg>`;
 
-  const footerLines = config.footerMessage.split("\n").map(l => `<p>${l}</p>`).join("");
+function buildReceiptHtml(data: ReceiptData, config: ReceiptConfig, blessing?: string): string {
+  // Build items — same layout as ESC/POS: name left, subtotal right
+  // Multi-quantity: name on line 1, "qty x unit_price    subtotal" on line 2
+  const itemsHtml = data.items.map(item => {
+    const subtotal = formatCOP(item.subtotal);
+    if (item.quantity > 1) {
+      return `
+        <div class="item-name">${item.name}</div>
+        <div class="item-row"><span class="item-qty">${item.quantity} x ${formatCOP(item.unitPrice)}</span><span>${subtotal}</span></div>
+      `;
+    }
+    return `<div class="item-row"><span class="item-single">${item.name}</span><span>${subtotal}</span></div>`;
+  }).join("");
+
+  const footerLines = config.footerMessage
+    ? config.footerMessage.split("\n").map(l => `<div>${l}</div>`).join("")
+    : "";
 
   return `<!DOCTYPE html>
 <html>
@@ -39,73 +52,96 @@ function buildReceiptHtml(data: ReceiptData, config: ReceiptConfig, blessing?: s
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: 'Courier New', monospace;
+      font-family: 'Courier New', 'Consolas', monospace;
       font-size: 12px;
-      width: 80mm;
-      padding: 4mm;
+      width: 72mm;
+      max-width: 72mm;
+      padding: 2mm 4mm;
       color: #000;
+      line-height: 1.4;
     }
     .center { text-align: center; }
     .bold { font-weight: bold; }
-    .divider { border-top: 1px dashed #000; margin: 6px 0; }
-    .double-divider { border-top: 2px solid #000; margin: 6px 0; }
-    .header { font-size: 16px; font-weight: bold; }
-    .subheader { font-size: 10px; color: #555; }
-    table { width: 100%; border-collapse: collapse; }
-    .total-row td { font-size: 16px; font-weight: bold; padding: 4px 0; }
-    .info-row { display: flex; justify-content: space-between; font-size: 11px; padding: 1px 0; }
-    .footer { font-size: 10px; color: #555; margin-top: 8px; }
+    .sep { border: none; border-top: 1px dashed #000; margin: 6px 0; }
+    .sep-double { border: none; border-top: 2px solid #000; margin: 6px 0; }
+
+    /* Header */
+    .logo { margin: 4px auto 6px; display: block; }
+    .biz-name { font-size: 18px; font-weight: bold; letter-spacing: 1px; }
+    .biz-info { font-size: 10px; color: #333; margin: 1px 0; }
+
+    /* Meta */
+    .meta-row { display: flex; justify-content: space-between; font-size: 11px; padding: 1px 0; }
+    .meta-label { }
+    .meta-value { font-weight: bold; }
+
+    /* Items */
+    .item-row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; }
+    .item-name { font-size: 11px; padding: 2px 0 0; }
+    .item-qty { color: #444; }
+    .item-single { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px; }
+
+    /* Total */
+    .total-box { padding: 4px 0; }
+    .total-row { display: flex; justify-content: space-between; font-size: 18px; font-weight: bold; }
+
+    /* Payment */
+    .pay-row { display: flex; justify-content: space-between; font-size: 11px; padding: 1px 0; }
+
+    /* Footer */
+    .footer { font-size: 10px; color: #555; text-align: center; margin-top: 6px; }
+    .blessing { font-size: 11px; font-style: italic; color: #555; text-align: center; margin-top: 8px; }
+
     @media print {
-      body { width: 80mm; }
-      @page { size: 80mm auto; margin: 0; }
+      body { width: 72mm; max-width: 72mm; }
+      @page { size: 80mm auto; margin: 0 4mm; }
     }
   </style>
 </head>
 <body>
-  <div class="center" style="margin-bottom:8px;">
-    ${config.showLogo ? '<div style="font-size:24px;margin-bottom:4px;">🍓</div>' : ""}
-    <div class="header">${data.businessName}</div>
-    ${config.nit ? `<div class="subheader">NIT: ${config.nit}</div>` : ""}
-    ${config.address ? `<div class="subheader">${config.address}</div>` : ""}
-    ${config.phone ? `<div class="subheader">Tel: ${config.phone}</div>` : ""}
+
+  <!-- ═══ HEADER ═══ -->
+  <div class="center" style="margin-bottom:6px;">
+    ${config.showLogo ? `<div class="logo">${STRAWBERRY_SVG}</div>` : ""}
+    <div class="biz-name">${data.businessName.toUpperCase()}</div>
+    ${config.nit ? `<div class="biz-info">NIT: ${config.nit}</div>` : ""}
+    ${config.address ? `<div class="biz-info">${config.address}</div>` : ""}
+    ${config.phone ? `<div class="biz-info">Tel: ${config.phone}</div>` : ""}
   </div>
 
-  <div class="divider"></div>
+  <hr class="sep">
 
-  <div class="info-row"><span>Venta #${data.saleNumber}</span><span>${data.date}</span></div>
-  <div class="info-row"><span>${data.cashierName || ""}</span><span>${data.time}</span></div>
+  <!-- ═══ METADATA ═══ -->
+  <div class="meta-row"><span>Factura: #${data.saleNumber}</span><span>${data.date}</span></div>
+  <div class="meta-row"><span>${data.cashierName ? `Cajero: ${data.cashierName}` : ""}</span><span>${data.time}</span></div>
 
-  <div class="divider"></div>
+  <hr class="sep">
 
-  <table><tbody>${itemsHtml}</tbody></table>
-
-  <div class="double-divider"></div>
-
-  <table>
-    <tr class="total-row">
-      <td style="text-align:left;">TOTAL</td>
-      <td style="text-align:right;">${formatCOP(data.total)}</td>
-    </tr>
-  </table>
-
-  <div class="divider"></div>
-
-  <div class="info-row">
-    <span>Método:</span>
-    <span class="bold">${data.paymentMethod === "efectivo" ? "Efectivo" : "Nequi"}</span>
+  <!-- ═══ ITEMS ═══ -->
+  <div style="margin:4px 0;">
+    ${itemsHtml}
   </div>
+
+  <!-- ═══ TOTAL ═══ -->
+  <hr class="sep-double">
+  <div class="total-box">
+    <div class="total-row"><span>TOTAL</span><span>${formatCOP(data.total)}</span></div>
+  </div>
+  <hr class="sep-double">
+
+  <!-- ═══ PAYMENT ═══ -->
+  <div class="pay-row"><span>Pago:</span><span class="bold">${data.paymentMethod === "efectivo" ? "Efectivo" : "Nequi"}</span></div>
   ${data.paymentMethod === "efectivo" && data.received ? `
-    <div class="info-row"><span>Recibido:</span><span>${formatCOP(data.received)}</span></div>
-    <div class="info-row"><span class="bold">Cambio:</span><span class="bold">${formatCOP(data.change || 0)}</span></div>
+    <div class="pay-row"><span>Recibido:</span><span>${formatCOP(data.received)}</span></div>
+    <div class="pay-row"><span class="bold">Cambio:</span><span class="bold">${formatCOP(data.change || 0)}</span></div>
   ` : ""}
 
-  <div class="divider"></div>
+  <!-- ═══ FOOTER ═══ -->
+  ${footerLines ? `<hr class="sep"><div class="footer">${footerLines}</div>` : ""}
 
-  <div class="center footer">${footerLines}</div>
+  ${blessing ? `<div class="blessing">&ldquo;${blessing}&rdquo;</div>` : ""}
 
-  ${blessing ? `<div class="center" style="margin-top:10px;font-style:italic;font-size:11px;color:#666;">&ldquo;${blessing}&rdquo;</div>` : ""}
-
-  <div style="margin-top:16px;">&nbsp;</div>
+  <div style="margin-top:20px;">&nbsp;</div>
 </body>
 </html>`;
 }
