@@ -110,14 +110,30 @@ function buildReceiptHtml(data: ReceiptData, config: ReceiptConfig, blessing?: s
 </html>`;
 }
 
-/** Print via browser dialog (fallback). */
+/** Print via hidden iframe (works in both browser and Electron). */
 function printReceiptBrowser(data: ReceiptData, config: ReceiptConfig, blessing?: string) {
   const html = buildReceiptHtml(data, config, blessing);
-  const win = window.open("", "_blank", "width=350,height=600");
-  if (!win) return;
-  win.document.write(html);
-  win.document.close();
-  win.onload = () => { win.print(); setTimeout(() => win.close(), 1000); };
+
+  // Remove old print frame if exists
+  const oldFrame = document.getElementById("print-frame");
+  if (oldFrame) oldFrame.remove();
+
+  const iframe = document.createElement("iframe");
+  iframe.id = "print-frame";
+  iframe.style.cssText = "position:fixed;top:-10000px;left:-10000px;width:350px;height:600px;";
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (!doc) return;
+
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  iframe.onload = () => {
+    iframe.contentWindow?.print();
+    setTimeout(() => iframe.remove(), 2000);
+  };
 }
 
 /**
