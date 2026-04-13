@@ -163,6 +163,17 @@ export async function printReceipt(data: ReceiptData) {
     ? pickRandomBlessing(config.blessingPhrases)
     : undefined;
 
+  // 1. Try Electron silent print (preferred for Windows POS-80)
+  const api = (window as any).electronAPI;
+  const savedPrinter = getSavedPrinter();
+  if (api?.isElectron && savedPrinter) {
+    const html = buildReceiptHtml(data, config, blessing);
+    const result = await api.printSilent(html, savedPrinter);
+    if (result.success) return;
+    console.warn("[printReceipt] Silent print failed:", result.error);
+  }
+
+  // 2. Try ESC/POS USB thermal printer (Mac Jaltech)
   try {
     const res = await fetch("/api/print", {
       method: "POST",
@@ -182,15 +193,10 @@ export async function printReceipt(data: ReceiptData) {
       const result = await res.json();
       if (result.success) return;
     }
+  } catch {}
 
-    // Non-OK response or success=false → fall back to browser
-    const errorPayload = await res.json().catch(() => ({}));
-    console.warn("[printReceipt] Thermal printer failed, falling back to browser:", errorPayload);
-    printReceiptBrowser(data, config, blessing);
-  } catch (err) {
-    console.warn("[printReceipt] Network error, falling back to browser:", err);
-    printReceiptBrowser(data, config, blessing);
-  }
+  // 3. Fallback: browser print dialog
+  await printReceiptBrowser(data, config, blessing);
 }
 
 /** Returns HTML string for preview (no auto-print) */

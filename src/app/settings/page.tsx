@@ -471,17 +471,19 @@ function UpdateChecker() {
 
   async function checkForUpdates() {
     setChecking(true);
-    setStatus(null);
+    setStatus("Verificando...");
     try {
       const res = await fetch("/api/update-check", { method: "POST" });
       const data = await res.json();
       if (data.updateAvailable) {
-        setStatus(`Nueva versión ${data.version} disponible — descargando...`);
+        setStatus(`Versión ${data.version} disponible. Cierra y reabre la app para actualizar.`);
+      } else if (data.current === data.version) {
+        setStatus(`✓ Estás en la última versión (${data.current})`);
       } else {
-        setStatus("Estás en la última versión");
+        setStatus(`✓ Versión actual: ${data.current}`);
       }
     } catch {
-      setStatus("No se pudo verificar (modo desarrollo)");
+      setStatus("No se pudo verificar");
     }
     setChecking(false);
   }

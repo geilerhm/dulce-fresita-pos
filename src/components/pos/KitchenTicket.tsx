@@ -163,6 +163,16 @@ async function printKitchenBrowser(data: KitchenTicketData) {
  * Falls back to browser popup if thermal printer fails.
  */
 export async function printKitchenTicket(data: KitchenTicketData) {
+  // 1. Try Electron silent print
+  const api = (window as any).electronAPI;
+  const printer = (() => { try { return localStorage.getItem("dulce-fresita-printer"); } catch { return null; } })();
+  if (api?.isElectron && printer) {
+    // Build kitchen HTML and print silently
+    await printKitchenBrowser(data); // reuse HTML builder but will use silent print inside
+    return;
+  }
+
+  // 2. Try ESC/POS USB
   try {
     const res = await fetch("/api/print/comanda", {
       method: "POST",
@@ -176,7 +186,7 @@ export async function printKitchenTicket(data: KitchenTicketData) {
     }
 
     console.warn("[printKitchenTicket] Thermal failed, falling back to browser");
-    printKitchenBrowser(data);
+    await printKitchenBrowser(data);
   } catch (err) {
     console.warn("[printKitchenTicket] Network error, falling back to browser:", err);
     printKitchenBrowser(data);
