@@ -200,12 +200,13 @@ export async function POST(request: Request) {
       }
     }
 
-    // Fallback: if logo didn't print, show the business name as a heading
+    // Fallback: if logo didn't print, show the business name as a heading.
+    // NOTE: setTextDoubleHeight() is intentionally NOT used — the Jaltech
+    // POS 80mm interprets GS! as double-height AND double-width, which
+    // doubles the column count and wraps every line past 16 chars.
     if (!logoPrinted) {
       printer.bold(true);
-      printer.setTextDoubleHeight();
       printer.println(center(data.businessName.toUpperCase()));
-      printer.setTextNormal();
       printer.bold(false);
     }
 
@@ -247,11 +248,11 @@ export async function POST(request: Request) {
     printer.newLine();
 
     // ════════════════ TOTAL (boxed with ══) ════════════════
+    // Bold only — NO setTextDoubleHeight(). The Jaltech GS! doubles
+    // both height AND width, overflowing the 32-char line into garbage.
     printer.println(separator("="));
     printer.bold(true);
-    printer.setTextDoubleHeight();
     printer.println(twoCol("TOTAL", formatAmount(data.total)));
-    printer.setTextNormal();
     printer.bold(false);
     printer.println(separator("="));
 
