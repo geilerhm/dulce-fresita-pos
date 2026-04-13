@@ -56,7 +56,6 @@ function copyDirSync(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const srcName = entry.name;
-    // Rename _node_modules back to node_modules
     const destName = srcName === "_node_modules" ? "node_modules" : srcName;
     const srcPath = path.join(src, srcName);
     const destPath = path.join(dest, destName);
@@ -65,6 +64,47 @@ function copyDirSync(src, dest) {
     } else {
       fs.copyFileSync(srcPath, destPath);
     }
+  }
+}
+
+/** Find all files matching a name recursively */
+function findFiles(dir, fileName, results = []) {
+  try {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) findFiles(full, fileName, results);
+      else if (entry.name === fileName) results.push(full);
+    }
+  } catch {}
+  return results;
+}
+
+/**
+ * Fix native module ABI mismatch.
+ * Next.js copies .node binaries to .next/node_modules/ which may have wrong ABI.
+ * We find the correct binary from root node_modules and overwrite all copies.
+ */
+function fixNativeModules(serverDir) {
+  const rootNm = path.join(serverDir, "node_modules");
+  const nextNm = path.join(serverDir, ".next", "node_modules");
+
+  if (!fs.existsSync(rootNm) || !fs.existsSync(nextNm)) return;
+
+  // Find correct better_sqlite3.node from root
+  const correctFiles = findFiles(rootNm, "better_sqlite3.node");
+  if (correctFiles.length === 0) { log("No root better_sqlite3.node found"); return; }
+  const correctBinary = correctFiles[0];
+  log(`Correct binary: ${correctBinary} (${fs.statSync(correctBinary).size} bytes)`);
+
+  // Find all copies in .next/node_modules and overwrite
+  const wrongFiles = findFiles(nextNm, "better_sqlite3.node");
+  for (const wrongFile of wrongFiles) {
+    log(`Replacing: ${wrongFile}`);
+    fs.copyFileSync(correctBinary, wrongFile);
+  }
+
+  if (wrongFiles.length > 0) {
+    log(`Fixed ${wrongFiles.length} native module(s)`);
   }
 }
 
@@ -160,6 +200,9 @@ async function startServer() {
   } else {
     log("Standalone already extracted, skipping");
   }
+
+  // Fix native module ABI mismatch (always run, even if already extracted)
+  fixNativeModules(runtimeDir);
 
   serverPort = await findFreePort();
   log(`Port: ${serverPort}`);
