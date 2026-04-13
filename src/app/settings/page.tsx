@@ -5,7 +5,7 @@ import { SOUND_PACKS, getSavedPackId, savePackId, type SoundPack } from "@/lib/u
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/lib/utils/toast";
 import { Strawberry } from "@/lib/utils/fruit-icons";
-import { SpeakerHigh, Check, ShoppingCart, Trash, CashRegister, User, Storefront, SignOut, Receipt, Printer, Sparkle } from "@phosphor-icons/react";
+import { SpeakerHigh, Check, ShoppingCart, Trash, CashRegister, User, Storefront, SignOut, Receipt, Printer, Sparkle, ArrowsClockwise, Info } from "@phosphor-icons/react";
 import { useRouter } from "next/navigation";
 import { getReceiptConfig, saveReceiptConfig, type ReceiptConfig } from "@/lib/utils/receipt-config";
 import { DEFAULT_BLESSINGS } from "@/lib/utils/blessing-phrases";
@@ -171,6 +171,9 @@ export default function SettingsPage() {
               >
                 <SignOut size={20} weight="bold" /> Cerrar sesión
               </button>
+
+              {/* Version + Update */}
+              <UpdateChecker />
             </div>
           )}
 
@@ -392,6 +395,56 @@ export default function SettingsPage() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function UpdateChecker() {
+  const [checking, setChecking] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const version = process.env.NEXT_PUBLIC_APP_VERSION || "dev";
+
+  async function checkForUpdates() {
+    setChecking(true);
+    setStatus(null);
+    try {
+      const res = await fetch("/api/update-check", { method: "POST" });
+      const data = await res.json();
+      if (data.updateAvailable) {
+        setStatus(`Nueva versión ${data.version} disponible — descargando...`);
+      } else {
+        setStatus("Estás en la última versión");
+      }
+    } catch {
+      setStatus("No se pudo verificar (modo desarrollo)");
+    }
+    setChecking(false);
+  }
+
+  return (
+    <div className="rounded-2xl bg-white border border-default-100 p-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-default-50">
+            <Info size={20} weight="duotone" className="text-default-400" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-default-800">Dulce Fresita</p>
+            <p className="text-xs text-default-400">Versión {version}</p>
+          </div>
+        </div>
+        <button
+          onClick={checkForUpdates}
+          disabled={checking}
+          className="flex items-center gap-2 h-10 px-4 rounded-xl bg-default-100 text-default-600 text-xs font-bold hover:bg-default-200 active:scale-95 transition-all disabled:opacity-50"
+        >
+          <ArrowsClockwise size={14} className={checking ? "animate-spin" : ""} />
+          {checking ? "Verificando..." : "Buscar actualización"}
+        </button>
+      </div>
+      {status && (
+        <p className="text-xs text-default-500 mt-3 bg-default-50 rounded-xl px-3 py-2">{status}</p>
+      )}
     </div>
   );
 }
