@@ -104,8 +104,8 @@ function buildReceiptHtml(
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
       font-family: 'Consolas', 'Courier New', 'Lucida Console', monospace;
-      font-size: 14px;
-      line-height: 1.35;
+      font-size: 11px;
+      line-height: 1.3;
       color: #000;
       background: #fff;
       -webkit-font-smoothing: none;
@@ -115,9 +115,11 @@ function buildReceiptHtml(
       print-color-adjust: exact;
     }
     body {
-      width: 72mm;
-      max-width: 72mm;
-      padding: 2mm 3mm;
+      /* 80mm paper minus ~5mm physical margin each side = ~70mm printable.
+         Use 68mm with 1mm padding for safety against driver-added margins. */
+      width: 68mm;
+      max-width: 68mm;
+      padding: 1mm 1mm;
     }
     img {
       image-rendering: pixelated;
@@ -129,34 +131,34 @@ function buildReceiptHtml(
     .bold { font-weight: bold; }
 
     /* Separators: dashed/double border lines, render crisply */
-    hr.sep { border: none; border-top: 1px dashed #000; margin: 5px 0; }
-    hr.sep-double { border: none; border-top: 2px solid #000; margin: 5px 0; }
+    hr.sep { border: none; border-top: 1px dashed #000; margin: 4px 0; }
+    hr.sep-double { border: none; border-top: 2px solid #000; margin: 4px 0; }
 
     /* Header */
-    .logo { display: block; margin: 2px auto 4px; max-width: 60mm; height: auto; }
-    .biz-name { font-size: 18px; font-weight: bold; letter-spacing: 1px; margin-bottom: 2px; }
-    .biz-info { font-size: 13px; margin: 1px 0; }
+    .logo { display: block; margin: 1px auto 3px; max-width: 42mm; height: auto; }
+    .biz-name { font-size: 14px; font-weight: bold; letter-spacing: 1px; margin-bottom: 2px; }
+    .biz-info { font-size: 10px; margin: 1px 0; }
 
     /* Two-column rows (label + value) */
-    .row { display: flex; justify-content: space-between; align-items: baseline; padding: 1px 0; gap: 8px; }
+    .row { display: flex; justify-content: space-between; align-items: baseline; padding: 1px 0; gap: 6px; }
     .row > span:last-child { white-space: nowrap; }
 
     /* Metadata: label-aligned with monospace padding */
-    .meta { padding: 2px 0; font-size: 13px; }
+    .meta { padding: 2px 0; font-size: 11px; }
     .meta div { padding: 1px 0; }
 
     /* Items */
-    .item-name { padding: 3px 0 0; font-weight: 500; }
-    .item-qty { font-size: 13px; padding-left: 8px; }
+    .item-name { padding: 2px 0 0; font-weight: 500; }
+    .item-qty { font-size: 10px; padding-left: 8px; }
     .item-qty > span:first-child { color: #333; }
 
     /* Total — bigger, bold */
-    .total { font-size: 18px; font-weight: bold; padding: 4px 0; }
+    .total { font-size: 14px; font-weight: bold; padding: 3px 0; }
 
     /* Footer */
-    .footer { font-size: 12px; text-align: center; padding: 4px 0 0; }
+    .footer { font-size: 10px; text-align: center; padding: 3px 0 0; }
     .footer div { padding: 1px 0; }
-    .blessing { font-size: 12px; font-style: italic; text-align: center; padding: 6px 4px 0; }
+    .blessing { font-size: 10px; font-style: italic; text-align: center; padding: 4px 4px 0; }
 
     @page { size: 80mm auto; margin: 0; }
   </style>
@@ -206,7 +208,7 @@ function buildReceiptHtml(
   ${blessing ? `<div class="blessing">"${escapeHtml(blessing)}"</div>` : ""}
 
   <!-- Bottom margin so the cutter doesn't trim the blessing -->
-  <div style="height: 10mm;">&nbsp;</div>
+  <div style="height: 18mm;">&nbsp;</div>
 </body>
 </html>`;
 }
