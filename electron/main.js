@@ -338,18 +338,28 @@ ipcMain.handle("print-silent", async (_event, html, printerName) => {
   return new Promise((resolve) => {
     const printWin = new BrowserWindow({
       show: false,
-      width: 300,
-      height: 800,
+      width: 320,
+      height: 1000,
       webPreferences: { nodeIntegration: false, contextIsolation: true },
     });
 
     printWin.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
 
     printWin.webContents.on("did-finish-load", () => {
+      // Print options tuned for 80mm POS thermal printers:
+      //   - pageSize 80mm width (in microns: 80mm × 1000)
+      //   - margins: none — let CSS @page handle layout
+      //   - dpi: 203 — standard thermal POS resolution; rendering at the
+      //     printer's native DPI prevents the driver from resampling and
+      //     blurring text/images
+      //   - scaleFactor: 100 — no scaling
       const options = {
         silent: true,
         printBackground: true,
         margins: { marginType: "none" },
+        pageSize: { width: 80000, height: 297000 },
+        dpi: { horizontal: 203, vertical: 203 },
+        scaleFactor: 100,
       };
       if (printerName) options.deviceName = printerName;
 

@@ -17,32 +17,82 @@ export interface ReceiptData {
   cashierName?: string;
 }
 
-// Strawberry SVG icon inline (same as fruit-icons.tsx but as raw SVG string)
-const STRAWBERRY_SVG = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="m17 7 3.5-3.5"/><path d="M17 2v5h5"/>
-  <path d="M2.1 17.1a4 4 0 0 0 4.8 4.8l9-2.1a6.32 6.32 0 0 0 2.9-10.9L15 5.2A6.5 6.5 0 0 0 4.1 8.3Z"/>
-  <path d="M8.5 9.5h.01"/><path d="M12.5 8.5h.01"/><path d="M7.5 13.5h.01"/>
-  <path d="M11.5 12.5h.01"/><path d="M15.5 11.5h.01"/><path d="M6.5 17.5h.01"/>
-  <path d="M10.5 16.5h.01"/><path d="M14.5 15.5h.01"/>
-</svg>`;
+/**
+ * Fetch the brand logo as a base64 data URL.
+ *
+ * Required because Electron's silent print loads HTML via a
+ * `data:text/html;...` URL — relative URLs like `/logo-ticket.png` can't
+ * be resolved from inside that context. Inlining as base64 is the only
+ * way to get the image into the printed HTML.
+ */
+async function fetchLogoDataUrl(): Promise<string> {
+  try {
+    const res = await fetch("/logo-ticket.png", { cache: "force-cache" });
+    if (!res.ok) return "";
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return "";
+  }
+}
 
-function buildReceiptHtml(data: ReceiptData, config: ReceiptConfig, blessing?: string): string {
-  // Build items — same layout as ESC/POS: name left, subtotal right
-  // Multi-quantity: name on line 1, "qty x unit_price    subtotal" on line 2
-  const itemsHtml = data.items.map(item => {
-    const subtotal = formatCOP(item.subtotal);
-    if (item.quantity > 1) {
-      return `
-        <div class="item-name">${item.name}</div>
-        <div class="item-row"><span class="item-qty">${item.quantity} x ${formatCOP(item.unitPrice)}</span><span>${subtotal}</span></div>
-      `;
-    }
-    return `<div class="item-row"><span class="item-single">${item.name}</span><span>${subtotal}</span></div>`;
-  }).join("");
+function escapeHtml(s: string): string {
+  const map: Record<string, string> = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;",
+  };
+  return s.replace(/[&<>"']/g, (c) => map[c]);
+}
+
+/**
+ * Build the receipt HTML — designed to mirror the ESC/POS thermal layout
+ * as closely as possible so the Windows-printed receipt LOOKS like the
+ * Mac-printed one. Key choices:
+ *
+ * - Real brand logo (base64) instead of generic strawberry SVG
+ * - Monospace font, larger size (14px) for crisp thermal rendering
+ * - `image-rendering: pixelated` so the 1-bit dithered logo stays sharp
+ *   at the printer's native resolution instead of being blurred by the
+ *   driver's bicubic resample
+ * - `-webkit-print-color-adjust: exact` to force black ink (no greys)
+ * - HR borders (not CSS shadows or backgrounds) — render cleanly
+ * - 80mm @page size matches POS-80 driver expectation
+ */
+function buildReceiptHtml(
+  data: ReceiptData,
+  config: ReceiptConfig,
+  blessing?: string,
+  logoDataUrl?: string,
+): string {
+  const itemsHtml = data.items
+    .map((item) => {
+      const subtotal = formatCOP(item.subtotal);
+      const name = escapeHtml(item.name);
+      if (item.quantity > 1) {
+        // Multi-quantity: name on its own line, qty x unit / subtotal below
+        return `
+          <div class="item-name">${name}</div>
+          <div class="row item-qty"><span>${item.quantity} x ${formatCOP(item.unitPrice)}</span><span>${subtotal}</span></div>
+        `;
+      }
+      return `<div class="row"><span>${name}</span><span>${subtotal}</span></div>`;
+    })
+    .join("");
 
   const footerLines = config.footerMessage
-    ? config.footerMessage.split("\n").map(l => `<div>${l}</div>`).join("")
+    ? config.footerMessage.split("\n").map((l) => `<div>${escapeHtml(l)}</div>`).join("")
     : "";
+
+  const showLogoImg = !!logoDataUrl && config.showLogo;
+  const showBizName = !showLogoImg; // fallback when no logo
 
   return `<!DOCTYPE html>
 <html>
@@ -50,98 +100,113 @@ function buildReceiptHtml(data: ReceiptData, config: ReceiptConfig, blessing?: s
   <meta charset="utf-8">
   <title>Recibo #${data.saleNumber}</title>
   <style>
+    /* Crisp thermal-friendly rendering — kill all anti-aliasing/smoothing */
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      font-family: 'Consolas', 'Courier New', 'Lucida Console', monospace;
+      font-size: 14px;
+      line-height: 1.35;
+      color: #000;
+      background: #fff;
+      -webkit-font-smoothing: none;
+      font-smooth: never;
+      text-rendering: optimizeSpeed;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
     body {
-      font-family: 'Courier New', 'Consolas', monospace;
-      font-size: 12px;
       width: 72mm;
       max-width: 72mm;
-      padding: 2mm 4mm;
-      color: #000;
-      line-height: 1.4;
+      padding: 2mm 3mm;
     }
+    img {
+      image-rendering: pixelated;
+      image-rendering: -moz-crisp-edges;
+      image-rendering: crisp-edges;
+    }
+
     .center { text-align: center; }
     .bold { font-weight: bold; }
-    .sep { border: none; border-top: 1px dashed #000; margin: 6px 0; }
-    .sep-double { border: none; border-top: 2px solid #000; margin: 6px 0; }
+
+    /* Separators: dashed/double border lines, render crisply */
+    hr.sep { border: none; border-top: 1px dashed #000; margin: 5px 0; }
+    hr.sep-double { border: none; border-top: 2px solid #000; margin: 5px 0; }
 
     /* Header */
-    .logo { margin: 4px auto 6px; display: block; }
-    .biz-name { font-size: 18px; font-weight: bold; letter-spacing: 1px; }
-    .biz-info { font-size: 10px; color: #333; margin: 1px 0; }
+    .logo { display: block; margin: 2px auto 4px; max-width: 60mm; height: auto; }
+    .biz-name { font-size: 18px; font-weight: bold; letter-spacing: 1px; margin-bottom: 2px; }
+    .biz-info { font-size: 13px; margin: 1px 0; }
 
-    /* Meta */
-    .meta-row { display: flex; justify-content: space-between; font-size: 11px; padding: 1px 0; }
-    .meta-label { }
-    .meta-value { font-weight: bold; }
+    /* Two-column rows (label + value) */
+    .row { display: flex; justify-content: space-between; align-items: baseline; padding: 1px 0; gap: 8px; }
+    .row > span:last-child { white-space: nowrap; }
+
+    /* Metadata: label-aligned with monospace padding */
+    .meta { padding: 2px 0; font-size: 13px; }
+    .meta div { padding: 1px 0; }
 
     /* Items */
-    .item-row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; }
-    .item-name { font-size: 11px; padding: 2px 0 0; }
-    .item-qty { color: #444; }
-    .item-single { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px; }
+    .item-name { padding: 3px 0 0; font-weight: 500; }
+    .item-qty { font-size: 13px; padding-left: 8px; }
+    .item-qty > span:first-child { color: #333; }
 
-    /* Total */
-    .total-box { padding: 4px 0; }
-    .total-row { display: flex; justify-content: space-between; font-size: 18px; font-weight: bold; }
-
-    /* Payment */
-    .pay-row { display: flex; justify-content: space-between; font-size: 11px; padding: 1px 0; }
+    /* Total — bigger, bold */
+    .total { font-size: 18px; font-weight: bold; padding: 4px 0; }
 
     /* Footer */
-    .footer { font-size: 10px; color: #555; text-align: center; margin-top: 6px; }
-    .blessing { font-size: 11px; font-style: italic; color: #555; text-align: center; margin-top: 8px; }
+    .footer { font-size: 12px; text-align: center; padding: 4px 0 0; }
+    .footer div { padding: 1px 0; }
+    .blessing { font-size: 12px; font-style: italic; text-align: center; padding: 6px 4px 0; }
 
-    @media print {
-      body { width: 72mm; max-width: 72mm; }
-      @page { size: 80mm auto; margin: 0 4mm; }
-    }
+    @page { size: 80mm auto; margin: 0; }
   </style>
 </head>
 <body>
 
-  <!-- ═══ HEADER ═══ -->
-  <div class="center" style="margin-bottom:6px;">
-    ${config.showLogo ? `<div class="logo">${STRAWBERRY_SVG}</div>` : ""}
-    <div class="biz-name">${data.businessName.toUpperCase()}</div>
-    ${config.nit ? `<div class="biz-info">NIT: ${config.nit}</div>` : ""}
-    ${config.address ? `<div class="biz-info">${config.address}</div>` : ""}
-    ${config.phone ? `<div class="biz-info">Tel: ${config.phone}</div>` : ""}
+  <!-- HEADER -->
+  <div class="center">
+    ${showLogoImg ? `<img class="logo" src="${logoDataUrl}" alt="Logo">` : ""}
+    ${showBizName ? `<div class="biz-name">${escapeHtml(data.businessName.toUpperCase())}</div>` : ""}
+    ${config.phone ? `<div class="biz-info">Tel: ${escapeHtml(config.phone)}</div>` : ""}
   </div>
 
   <hr class="sep">
 
-  <!-- ═══ METADATA ═══ -->
-  <div class="meta-row"><span>Factura: #${data.saleNumber}</span><span>${data.date}</span></div>
-  <div class="meta-row"><span>${data.cashierName ? `Cajero: ${data.cashierName}` : ""}</span><span>${data.time}</span></div>
+  <!-- METADATA -->
+  <div class="meta">
+    <div>Factura: #${data.saleNumber}</div>
+    <div>Fecha:   ${escapeHtml(data.date)} ${escapeHtml(data.time)}</div>
+    ${data.cashierName ? `<div>Cajero:  ${escapeHtml(data.cashierName)}</div>` : ""}
+  </div>
 
   <hr class="sep">
 
-  <!-- ═══ ITEMS ═══ -->
-  <div style="margin:4px 0;">
+  <!-- ITEMS -->
+  <div style="padding: 4px 0;">
     ${itemsHtml}
   </div>
 
-  <!-- ═══ TOTAL ═══ -->
+  <!-- TOTAL (boxed with double lines) -->
   <hr class="sep-double">
-  <div class="total-box">
-    <div class="total-row"><span>TOTAL</span><span>${formatCOP(data.total)}</span></div>
+  <div class="row total"><span>TOTAL</span><span>${formatCOP(data.total)}</span></div>
+  <hr class="sep-double">
+
+  <!-- PAYMENT -->
+  <div style="padding: 4px 0;">
+    <div class="row"><span>Pago:</span><span class="bold">${data.paymentMethod === "efectivo" ? "Efectivo" : "Nequi"}</span></div>
+    ${data.paymentMethod === "efectivo" && data.received ? `
+      <div class="row"><span>Recibido:</span><span>${formatCOP(data.received)}</span></div>
+      <div class="row"><span class="bold">Cambio:</span><span class="bold">${formatCOP(data.change || 0)}</span></div>
+    ` : ""}
   </div>
-  <hr class="sep-double">
 
-  <!-- ═══ PAYMENT ═══ -->
-  <div class="pay-row"><span>Pago:</span><span class="bold">${data.paymentMethod === "efectivo" ? "Efectivo" : "Nequi"}</span></div>
-  ${data.paymentMethod === "efectivo" && data.received ? `
-    <div class="pay-row"><span>Recibido:</span><span>${formatCOP(data.received)}</span></div>
-    <div class="pay-row"><span class="bold">Cambio:</span><span class="bold">${formatCOP(data.change || 0)}</span></div>
-  ` : ""}
-
-  <!-- ═══ FOOTER ═══ -->
+  <!-- FOOTER -->
   ${footerLines ? `<hr class="sep"><div class="footer">${footerLines}</div>` : ""}
 
-  ${blessing ? `<div class="blessing">&ldquo;${blessing}&rdquo;</div>` : ""}
+  ${blessing ? `<div class="blessing">"${escapeHtml(blessing)}"</div>` : ""}
 
-  <div style="margin-top:20px;">&nbsp;</div>
+  <!-- Bottom margin so the cutter doesn't trim the blessing -->
+  <div style="height: 10mm;">&nbsp;</div>
 </body>
 </html>`;
 }
@@ -151,22 +216,8 @@ function getSavedPrinter(): string | null {
   try { return localStorage.getItem("dulce-fresita-printer"); } catch { return null; }
 }
 
-/** Print via Electron silent print (preferred) or iframe fallback */
-async function printReceiptBrowser(data: ReceiptData, config: ReceiptConfig, blessing?: string) {
-  const html = buildReceiptHtml(data, config, blessing);
-
-  // Try Electron silent print first
-  const api = (window as any).electronAPI;
-  if (api?.isElectron) {
-    const printer = getSavedPrinter();
-    if (printer) {
-      const result = await api.printSilent(html, printer);
-      if (result.success) return;
-      console.warn("[print] Silent print failed:", result.error);
-    }
-  }
-
-  // Fallback: iframe print dialog
+/** Print HTML via hidden iframe (browser fallback when nothing else works). */
+async function printViaIframe(html: string) {
   const oldFrame = document.getElementById("print-frame");
   if (oldFrame) oldFrame.remove();
 
@@ -189,9 +240,13 @@ async function printReceiptBrowser(data: ReceiptData, config: ReceiptConfig, ble
 }
 
 /**
- * Print receipt on the Jaltech POS 80mm thermal printer via ESC/POS.
- * Falls back to the browser print dialog if the thermal printer fails
- * (not detected, USB error, server endpoint unavailable, etc).
+ * Print receipt via the best available transport:
+ *   1. Electron silent print (Windows POS-80 via Windows driver)
+ *   2. ESC/POS USB thermal (Mac Jaltech direct)
+ *   3. Browser print dialog
+ *
+ * The HTML version is built with the actual brand logo embedded as
+ * base64 so it looks identical regardless of which path is taken.
  */
 export async function printReceipt(data: ReceiptData) {
   const config = getReceiptConfig();
@@ -199,17 +254,21 @@ export async function printReceipt(data: ReceiptData) {
     ? pickRandomBlessing(config.blessingPhrases)
     : undefined;
 
-  // 1. Try Electron silent print (preferred for Windows POS-80)
+  // Pre-fetch the brand logo as base64. Required for Electron silent print
+  // (data: URLs can't resolve relative resources) and harmless otherwise.
+  const logoDataUrl = config.showLogo ? await fetchLogoDataUrl() : "";
+
+  // 1. Try Electron silent print (Windows POS-80 via Windows driver)
   const api = (window as any).electronAPI;
   const savedPrinter = getSavedPrinter();
   if (api?.isElectron && savedPrinter) {
-    const html = buildReceiptHtml(data, config, blessing);
+    const html = buildReceiptHtml(data, config, blessing, logoDataUrl);
     const result = await api.printSilent(html, savedPrinter);
     if (result.success) return;
     console.warn("[printReceipt] Silent print failed:", result.error);
   }
 
-  // 2. Try ESC/POS USB thermal printer (Mac Jaltech)
+  // 2. Try ESC/POS USB thermal (Mac Jaltech direct via /api/print)
   try {
     const res = await fetch("/api/print", {
       method: "POST",
@@ -231,8 +290,9 @@ export async function printReceipt(data: ReceiptData) {
     }
   } catch {}
 
-  // 3. Fallback: browser print dialog
-  await printReceiptBrowser(data, config, blessing);
+  // 3. Fallback: browser print dialog (uses same HTML as Electron path)
+  const html = buildReceiptHtml(data, config, blessing, logoDataUrl);
+  await printViaIframe(html);
 }
 
 /** Returns HTML string for preview (no auto-print) */
