@@ -400,14 +400,55 @@ export async function POST(request: Request) {
   }
 }
 
-/** Quick health check: is the printer detected on USB? */
+/** Full diagnostic of all print transports. */
 export async function GET() {
   try {
-    const device = findByIds(VENDOR_ID, PRODUCT_ID);
+    // USB check
+    let usbDetected = false;
+    let usbError: string | null = null;
+    try {
+      const device = findByIds(VENDOR_ID, PRODUCT_ID);
+      usbDetected = !!device;
+    } catch (e: any) {
+      usbError = e?.message ?? "unknown";
+    }
+
+    // node-printer check + list installed Windows printers
+    let nodePrinterLoaded = false;
+    let nodePrinterError: string | null = null;
+    let availablePrinters: string[] = [];
+    let defaultPrinter: string | null = null;
+    try {
+      const mod: any = await import("@thiagoelg/node-printer");
+      const printerMod = mod.default || mod;
+      nodePrinterLoaded = true;
+      try {
+        const printers = printerMod.getPrinters();
+        availablePrinters = printers.map((p: any) => p.name);
+        const def = printerMod.getDefaultPrinterName();
+        defaultPrinter = def ?? null;
+      } catch (listErr: any) {
+        nodePrinterError = `loaded but getPrinters failed: ${listErr?.message ?? "unknown"}`;
+      }
+    } catch (e: any) {
+      nodePrinterError = e?.message ?? "module not available";
+    }
+
     return NextResponse.json({
-      connected: !!device,
-      vendorId: `0x${VENDOR_ID.toString(16).padStart(4, "0")}`,
-      productId: `0x${PRODUCT_ID.toString(16).padStart(4, "0")}`,
+      platform: process.platform,
+      nodeVersion: process.version,
+      usb: {
+        detected: usbDetected,
+        vendorId: `0x${VENDOR_ID.toString(16).padStart(4, "0")}`,
+        productId: `0x${PRODUCT_ID.toString(16).padStart(4, "0")}`,
+        error: usbError,
+      },
+      nodePrinter: {
+        loaded: nodePrinterLoaded,
+        error: nodePrinterError,
+        availablePrinters,
+        defaultPrinter,
+      },
       lineWidth: LINE_WIDTH,
     });
   } catch (err: any) {

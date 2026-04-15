@@ -346,6 +346,8 @@ export default function SettingsPage() {
               >
                 <Printer size={18} weight="bold" /> Imprimir prueba
               </button>
+
+              <PrintDiagnostic />
             </div>
           )}
 
@@ -398,6 +400,78 @@ export default function SettingsPage() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+interface PrintDiag {
+  platform: string;
+  nodeVersion: string;
+  usb: { detected: boolean; vendorId: string; productId: string; error: string | null };
+  nodePrinter: { loaded: boolean; error: string | null; availablePrinters: string[]; defaultPrinter: string | null };
+  lineWidth: number;
+}
+
+function PrintDiagnostic() {
+  const [diag, setDiag] = useState<PrintDiag | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function runDiag() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/print");
+      setDiag(await res.json());
+    } catch (err: any) {
+      toast.error("Error ejecutando diagnóstico");
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div className="rounded-2xl bg-white border border-default-100 p-5 space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-bold text-default-800">Diagnóstico de impresión</p>
+          <p className="text-[11px] text-default-400">Muestra qué transporte está disponible</p>
+        </div>
+        <button
+          onClick={runDiag}
+          disabled={loading}
+          className="flex items-center gap-2 h-10 px-4 rounded-xl bg-default-100 text-default-600 text-xs font-bold hover:bg-default-200 active:scale-95 transition-all disabled:opacity-50"
+        >
+          <ArrowsClockwise size={14} className={loading ? "animate-spin" : ""} />
+          Ejecutar
+        </button>
+      </div>
+
+      {diag && (
+        <div className="space-y-2 text-xs font-mono bg-default-50 rounded-xl p-3">
+          <div><span className="text-default-400">Platform:</span> <span className="font-semibold">{diag.platform}</span></div>
+          <div><span className="text-default-400">Node:</span> <span className="font-semibold">{diag.nodeVersion}</span></div>
+
+          <div className="border-t border-default-100 pt-2">
+            <p className="font-bold text-default-700 mb-1">USB (ESC/POS direct)</p>
+            <div>Detectado: <span className={diag.usb.detected ? "text-emerald-600 font-bold" : "text-red-500 font-bold"}>{diag.usb.detected ? "SÍ" : "NO"}</span></div>
+            <div>vendor: {diag.usb.vendorId} · product: {diag.usb.productId}</div>
+            {diag.usb.error && <div className="text-red-500">error: {diag.usb.error}</div>}
+          </div>
+
+          <div className="border-t border-default-100 pt-2">
+            <p className="font-bold text-default-700 mb-1">node-printer (Windows RAW)</p>
+            <div>Módulo cargado: <span className={diag.nodePrinter.loaded ? "text-emerald-600 font-bold" : "text-red-500 font-bold"}>{diag.nodePrinter.loaded ? "SÍ" : "NO"}</span></div>
+            {diag.nodePrinter.error && <div className="text-red-500 break-all">error: {diag.nodePrinter.error}</div>}
+            {diag.nodePrinter.availablePrinters.length > 0 && (
+              <div className="mt-1">
+                <div>Impresoras instaladas:</div>
+                <ul className="pl-3">
+                  {diag.nodePrinter.availablePrinters.map((p) => <li key={p}>· {p}</li>)}
+                </ul>
+              </div>
+            )}
+            {diag.nodePrinter.defaultPrinter && <div>Por defecto: {diag.nodePrinter.defaultPrinter}</div>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

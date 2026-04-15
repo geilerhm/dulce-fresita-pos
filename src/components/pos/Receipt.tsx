@@ -3,6 +3,7 @@
 import { formatCOP } from "@/lib/utils/format";
 import { getReceiptConfig, type ReceiptConfig } from "@/lib/utils/receipt-config";
 import { pickRandomBlessing } from "@/lib/utils/blessing-phrases";
+import { toast } from "@/lib/utils/toast";
 
 export interface ReceiptData {
   businessName: string;
@@ -268,6 +269,7 @@ export async function printReceipt(data: ReceiptData) {
   //    - Windows: RAW spooler via WritePrinter (when printerName is set)
   //    Both paths generate identical ESC/POS bytes, so the printed
   //    output is identical regardless of OS.
+  let escposError: string | null = null;
   try {
     const res = await fetch("/api/print", {
       method: "POST",
@@ -283,17 +285,23 @@ export async function printReceipt(data: ReceiptData) {
         printerName: savedPrinter,
       }),
     });
-    if (res.ok) {
-      const result = await res.json();
-      if (result.success) return;
-      console.warn("[printReceipt] ESC/POS print failed:", result.error);
+    const result = await res.json().catch(() => null);
+    if (res.ok && result?.success) {
+      // Surface which transport succeeded so user knows if they're on
+      // the fast path (esc/pos) or the fallback (html).
+      toast.success(`Impreso (${result.transport ?? "ok"})`);
+      return;
     }
-  } catch (err) {
+    escposError = result?.error ?? `HTTP ${res.status}`;
+    console.warn("[printReceipt] ESC/POS print failed:", escposError);
+  } catch (err: any) {
+    escposError = `network: ${err?.message ?? "unknown"}`;
     console.warn("[printReceipt] /api/print network error:", err);
   }
 
   // 2. Fallback: Electron silent print with HTML (last-resort, may
   //    have driver-dependent layout issues — RAW path above is preferred).
+  toast.warning(`ESC/POS falló (${escposError}), usando HTML fallback`);
   const logoDataUrl = config.showLogo ? await fetchLogoDataUrl() : "";
   const api = (window as any).electronAPI;
   if (api?.isElectron && savedPrinter) {
