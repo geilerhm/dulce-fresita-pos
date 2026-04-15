@@ -348,18 +348,21 @@ ipcMain.handle("print-silent", async (_event, html, printerName) => {
     printWin.webContents.on("did-finish-load", () => {
       // Print options for 80mm POS thermal printers.
       //
-      // We deliberately DO NOT specify pageSize or dpi — letting the
-      // installed Windows printer driver use its own configured paper
-      // size and resolution prevents fit-to-page scaling that was
-      // making the receipt render too wide and clip on the right edge.
+      // CRITICAL: pageSize MUST be specified as 80mm wide. Without it,
+      // Chromium defaults to Letter (216mm × 279mm) and the driver
+      // applies Letter's standard margins (~25mm left) to the thermal
+      // paper, pushing the receipt to the middle and clipping the right.
       //
-      // The HTML body is sized small (58mm) so it fits inside any
-      // POS-80 driver's printable area, even drivers misconfigured
-      // for 58mm paper.
+      // Height is generous (200mm) — the thermal printer just stops
+      // feeding when content ends; it doesn't need an exact height.
+      //
+      // No `dpi` — letting the driver use its native resolution avoids
+      // fit-to-page scaling that made content render too large.
       const options = {
         silent: true,
         printBackground: true,
         margins: { marginType: "none" },
+        pageSize: { width: 80000, height: 200000 },
         scaleFactor: 100,
       };
       if (printerName) options.deviceName = printerName;

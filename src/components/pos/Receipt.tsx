@@ -115,12 +115,14 @@ function buildReceiptHtml(
       print-color-adjust: exact;
     }
     body {
-      /* Conservative width — Windows POS-80 drivers often have actual
-         printable areas as narrow as 60-64mm despite 80mm paper installed.
-         Going smaller is safe (centered on paper); going wider clips. */
-      width: 58mm;
-      max-width: 58mm;
-      padding: 0;
+      /* Body fills the full 80mm page width set by Electron's pageSize.
+         Internal horizontal padding (11mm each side) keeps the actual
+         content area at ~58mm — same comfortable size as before — but
+         now the body geometry matches the page exactly, so the driver
+         can't apply its own offsets/margins on top. */
+      width: 80mm;
+      max-width: 80mm;
+      padding: 0 11mm;
       margin: 0;
     }
     img {
@@ -162,9 +164,10 @@ function buildReceiptHtml(
     .footer div { padding: 1px 0; }
     .blessing { font-size: 9px; font-style: italic; text-align: center; padding: 3px 4px 0; }
 
-    /* No @page rule — let the printer driver use its configured paper size.
-       Specifying a size here often conflicts with Windows POS-80 drivers
-       and triggers fit-to-page scaling that breaks the layout. */
+    /* @page tells the print engine "this is an 80mm-wide continuous-feed
+       page" so the driver doesn't fall back to Letter defaults (which
+       caused a ~25mm left offset on Windows POS-80 drivers). */
+    @page { size: 80mm auto; margin: 0; }
   </style>
 </head>
 <body>
