@@ -261,22 +261,13 @@ export async function printReceipt(data: ReceiptData) {
   const blessing = config.showBlessing
     ? pickRandomBlessing(config.blessingPhrases)
     : undefined;
-
-  // Pre-fetch the brand logo as base64. Required for Electron silent print
-  // (data: URLs can't resolve relative resources) and harmless otherwise.
-  const logoDataUrl = config.showLogo ? await fetchLogoDataUrl() : "";
-
-  // 1. Try Electron silent print (Windows POS-80 via Windows driver)
-  const api = (window as any).electronAPI;
   const savedPrinter = getSavedPrinter();
-  if (api?.isElectron && savedPrinter) {
-    const html = buildReceiptHtml(data, config, blessing, logoDataUrl);
-    const result = await api.printSilent(html, savedPrinter);
-    if (result.success) return;
-    console.warn("[printReceipt] Silent print failed:", result.error);
-  }
 
-  // 2. Try ESC/POS USB thermal (Mac Jaltech direct via /api/print)
+  // 1. Try ESC/POS via /api/print — this handles BOTH:
+  //    - Mac: USB direct via libusb
+  //    - Windows: RAW spooler via WritePrinter (when printerName is set)
+  //    Both paths generate identical ESC/POS bytes, so the printed
+  //    output is identical regardless of OS.
   try {
     const res = await fetch("/api/print", {
       method: "POST",
@@ -289,16 +280,30 @@ export async function printReceipt(data: ReceiptData) {
         footerMessage: config.footerMessage,
         showLogo: config.showLogo,
         blessingMessage: blessing,
+        printerName: savedPrinter,
       }),
     });
-
     if (res.ok) {
       const result = await res.json();
       if (result.success) return;
+      console.warn("[printReceipt] ESC/POS print failed:", result.error);
     }
-  } catch {}
+  } catch (err) {
+    console.warn("[printReceipt] /api/print network error:", err);
+  }
 
-  // 3. Fallback: browser print dialog (uses same HTML as Electron path)
+  // 2. Fallback: Electron silent print with HTML (last-resort, may
+  //    have driver-dependent layout issues — RAW path above is preferred).
+  const logoDataUrl = config.showLogo ? await fetchLogoDataUrl() : "";
+  const api = (window as any).electronAPI;
+  if (api?.isElectron && savedPrinter) {
+    const html = buildReceiptHtml(data, config, blessing, logoDataUrl);
+    const result = await api.printSilent(html, savedPrinter);
+    if (result.success) return;
+    console.warn("[printReceipt] Silent print failed:", result.error);
+  }
+
+  // 3. Last resort: browser print dialog
   const html = buildReceiptHtml(data, config, blessing, logoDataUrl);
   await printViaIframe(html);
 }

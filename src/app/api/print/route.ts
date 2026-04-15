@@ -50,6 +50,8 @@ interface PrintRequest {
   openDrawer?: boolean;
   showLogo?: boolean;
   blessingMessage?: string;
+  /** Windows printer name for RAW-mode spooler print (bypasses driver rendering) */
+  printerName?: string;
 }
 
 // Logo location — preprocessed by ImageMagick to 320x148 monochrome dithered PNG
@@ -116,7 +118,41 @@ function splitAddress(addr: string): string[] {
   return addr.split(",").map((p) => p.trim()).filter(Boolean);
 }
 
-// ── USB transport ─────────────────────────────────────────────
+// ── Transports ────────────────────────────────────────────────
+
+/**
+ * Send raw ESC/POS bytes to a Windows printer via the print spooler
+ * in RAW datatype mode. This uses WritePrinter() under the hood, which
+ * passes the bytes through the spooler WITHOUT the driver's rendering
+ * pipeline — no page sizing, no margins, no scaling. The printer's
+ * firmware receives the ESC/POS commands and interprets them directly,
+ * exactly as if they came over USB.
+ *
+ * Requires `@thiagoelg/node-printer` to be installed (native addon,
+ * Windows-only practical target). Fails gracefully if unavailable.
+ */
+async function sendToWindowsRaw(buffer: Buffer, printerName: string): Promise<void> {
+  // Dynamic import so Mac dev (where this package fails to compile)
+  // doesn't break — optionalDependencies lets npm install continue
+  // without it, and this require-on-demand skips cleanly.
+  let printerMod: any;
+  try {
+    printerMod = await import("@thiagoelg/node-printer");
+    printerMod = printerMod.default || printerMod;
+  } catch (err: any) {
+    throw new Error(`node-printer not available: ${err?.message ?? "module not installed"}`);
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    printerMod.printDirect({
+      data: buffer,
+      printer: printerName,
+      type: "RAW",
+      success: () => resolve(),
+      error: (err: Error) => reject(err),
+    });
+  });
+}
 
 async function sendToUsb(buffer: Buffer): Promise<void> {
   const device = findByIds(VENDOR_ID, PRODUCT_ID);
@@ -324,9 +360,37 @@ export async function POST(request: Request) {
     printer.append(Buffer.from([0x1B, 0x64, 0x04, 0x1D, 0x56, 0x00]));
 
     const buffer = printer.getBuffer();
-    await sendToUsb(buffer);
 
-    return NextResponse.json({ success: true });
+    // Transport selection:
+    //   1. USB ESC/POS direct — works on Mac with libusb / Linux / any OS
+    //      where the printer isn't claimed by a system driver.
+    //   2. Windows RAW spooler — works on Windows where the OS print
+    //      driver owns the USB device; sends the same ESC/POS bytes
+    //      through WritePrinter() with type=RAW so the driver doesn't
+    //      mangle them (no HTML rendering, no paper-size scaling, no
+    //      margins). Requires @thiagoelg/node-printer.
+    // USB is tried first; if the device isn't found OR claim fails,
+    // and a printerName was provided, we fall back to Windows RAW.
+    try {
+      await sendToUsb(buffer);
+      return NextResponse.json({ success: true, transport: "usb" });
+    } catch (usbErr: any) {
+      if (data.printerName) {
+        try {
+          await sendToWindowsRaw(buffer, data.printerName);
+          return NextResponse.json({ success: true, transport: "windows-raw" });
+        } catch (rawErr: any) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: `USB failed (${usbErr?.message ?? "unknown"}); RAW failed (${rawErr?.message ?? "unknown"})`,
+            },
+            { status: 500 }
+          );
+        }
+      }
+      throw usbErr;
+    }
   } catch (err: any) {
     console.error("[/api/print] Error:", err);
     return NextResponse.json(
