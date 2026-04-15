@@ -104,8 +104,8 @@ function buildReceiptHtml(
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
       font-family: 'Consolas', 'Courier New', 'Lucida Console', monospace;
-      font-size: 10px;
-      line-height: 1.25;
+      font-size: 9px;
+      line-height: 1.2;
       color: #000;
       background: #fff;
       -webkit-font-smoothing: none;
@@ -115,15 +115,13 @@ function buildReceiptHtml(
       print-color-adjust: exact;
     }
     body {
-      /* Left-anchored, NOT centered. Body sits at x=0 of the 80mm page
-         and is itself 72mm wide with tiny 2mm internal padding. This
-         forces content to start near the left edge of the paper —
-         matching how thermal POS receipts traditionally print and how
-         the Mac ESC/POS direct path behaves. The 8mm of unused space
-         on the right is fine; better than offset-to-middle clipping. */
+      /* Anchored at x=0 of the 80mm page, no internal padding so content
+         starts at the leftmost printable column. Width 72mm leaves 8mm
+         of slack on the right to absorb any driver-added margin without
+         clipping. */
       width: 72mm;
       max-width: 72mm;
-      padding: 0 2mm;
+      padding: 0;
       margin: 0;
     }
     img {
@@ -140,30 +138,30 @@ function buildReceiptHtml(
     hr.sep-double { border: none; border-top: 2px solid #000; margin: 3px 0; }
 
     /* Header */
-    .logo { display: block; margin: 1px auto 2px; max-width: 36mm; height: auto; }
-    .biz-name { font-size: 12px; font-weight: bold; letter-spacing: 0.5px; margin-bottom: 1px; }
-    .biz-info { font-size: 9px; margin: 1px 0; }
+    .logo { display: block; margin: 1px auto 2px; max-width: 32mm; height: auto; }
+    .biz-name { font-size: 11px; font-weight: bold; letter-spacing: 0.5px; margin-bottom: 1px; }
+    .biz-info { font-size: 8px; margin: 1px 0; }
 
     /* Two-column rows (label + value) */
     .row { display: flex; justify-content: space-between; align-items: baseline; padding: 1px 0; gap: 4px; }
     .row > span:last-child { white-space: nowrap; }
 
     /* Metadata */
-    .meta { padding: 1px 0; font-size: 10px; }
+    .meta { padding: 1px 0; font-size: 9px; }
     .meta div { padding: 1px 0; }
 
     /* Items */
     .item-name { padding: 2px 0 0; font-weight: 500; }
-    .item-qty { font-size: 9px; padding-left: 6px; }
+    .item-qty { font-size: 8px; padding-left: 6px; }
     .item-qty > span:first-child { color: #333; }
 
     /* Total — bigger, bold */
-    .total { font-size: 13px; font-weight: bold; padding: 2px 0; }
+    .total { font-size: 12px; font-weight: bold; padding: 2px 0; }
 
     /* Footer */
-    .footer { font-size: 9px; text-align: center; padding: 2px 0 0; }
+    .footer { font-size: 8px; text-align: center; padding: 2px 0 0; }
     .footer div { padding: 1px 0; }
-    .blessing { font-size: 9px; font-style: italic; text-align: center; padding: 3px 4px 0; }
+    .blessing { font-size: 8px; font-style: italic; text-align: center; padding: 3px 4px 0; }
 
     /* @page tells the print engine "this is an 80mm-wide continuous-feed
        page" so the driver doesn't fall back to Letter defaults (which
