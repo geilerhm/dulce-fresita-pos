@@ -115,14 +115,15 @@ function buildReceiptHtml(
       print-color-adjust: exact;
     }
     body {
-      /* Body fills the full 80mm page width set by Electron's pageSize.
-         Internal horizontal padding (11mm each side) keeps the actual
-         content area at ~58mm — same comfortable size as before — but
-         now the body geometry matches the page exactly, so the driver
-         can't apply its own offsets/margins on top. */
-      width: 80mm;
-      max-width: 80mm;
-      padding: 0 11mm;
+      /* Left-anchored, NOT centered. Body sits at x=0 of the 80mm page
+         and is itself 72mm wide with tiny 2mm internal padding. This
+         forces content to start near the left edge of the paper —
+         matching how thermal POS receipts traditionally print and how
+         the Mac ESC/POS direct path behaves. The 8mm of unused space
+         on the right is fine; better than offset-to-middle clipping. */
+      width: 72mm;
+      max-width: 72mm;
+      padding: 0 2mm;
       margin: 0;
     }
     img {
