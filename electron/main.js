@@ -346,19 +346,20 @@ ipcMain.handle("print-silent", async (_event, html, printerName) => {
     printWin.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
 
     printWin.webContents.on("did-finish-load", () => {
-      // Print options tuned for 80mm POS thermal printers:
-      //   - pageSize 80mm width (in microns: 80mm × 1000)
-      //   - margins: none — let CSS @page handle layout
-      //   - dpi: 203 — standard thermal POS resolution; rendering at the
-      //     printer's native DPI prevents the driver from resampling and
-      //     blurring text/images
-      //   - scaleFactor: 100 — no scaling
+      // Print options for 80mm POS thermal printers.
+      //
+      // We deliberately DO NOT specify pageSize or dpi — letting the
+      // installed Windows printer driver use its own configured paper
+      // size and resolution prevents fit-to-page scaling that was
+      // making the receipt render too wide and clip on the right edge.
+      //
+      // The HTML body is sized small (58mm) so it fits inside any
+      // POS-80 driver's printable area, even drivers misconfigured
+      // for 58mm paper.
       const options = {
         silent: true,
         printBackground: true,
         margins: { marginType: "none" },
-        pageSize: { width: 80000, height: 297000 },
-        dpi: { horizontal: 203, vertical: 203 },
         scaleFactor: 100,
       };
       if (printerName) options.deviceName = printerName;
