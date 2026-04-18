@@ -154,6 +154,29 @@ async function sendToWindowsRaw(buffer: Buffer, printerName: string): Promise<vo
   });
 }
 
+/**
+ * Resolve the best available Windows printer name.
+ * Falls back through: explicit → default → POS-looking match → first installed.
+ * Returns null only if no printers are installed at all.
+ */
+async function resolveWindowsPrinter(explicit?: string): Promise<string | null> {
+  if (explicit) return explicit;
+  try {
+    const mod: any = await import("@thiagoelg/node-printer");
+    const printerMod = mod.default || mod;
+    const def = printerMod.getDefaultPrinterName?.();
+    if (def) return def;
+    const printers: any[] = printerMod.getPrinters?.() ?? [];
+    const posMatch = printers.find((p: any) =>
+      /pos|80mm|thermal|receipt|jaltech|xprinter/i.test(p?.name ?? "")
+    );
+    if (posMatch) return posMatch.name;
+    return printers[0]?.name ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function sendToUsb(buffer: Buffer): Promise<void> {
   const device = findByIds(VENDOR_ID, PRODUCT_ID);
   if (!device) {
@@ -362,15 +385,35 @@ export async function POST(request: Request) {
     const buffer = printer.getBuffer();
 
     // Transport selection:
-    //   1. USB ESC/POS direct — works on Mac with libusb / Linux / any OS
-    //      where the printer isn't claimed by a system driver.
-    //   2. Windows RAW spooler — works on Windows where the OS print
-    //      driver owns the USB device; sends the same ESC/POS bytes
-    //      through WritePrinter() with type=RAW so the driver doesn't
-    //      mangle them (no HTML rendering, no paper-size scaling, no
-    //      margins). Requires @thiagoelg/node-printer.
-    // USB is tried first; if the device isn't found OR claim fails,
-    // and a printerName was provided, we fall back to Windows RAW.
+    //   - Windows: libusb cannot claim printer USB (owned by spooler) so we
+    //     skip USB entirely and go straight to RAW spooler. Printer name is
+    //     resolved automatically: explicit → default → POS-looking → first.
+    //   - Mac/Linux: USB ESC/POS direct via libusb; falls back to RAW only
+    //     if an explicit printerName was provided.
+    const isWindows = process.platform === "win32";
+
+    if (isWindows) {
+      const printerName = await resolveWindowsPrinter(data.printerName);
+      if (!printerName) {
+        return NextResponse.json(
+          { success: false, error: "No se encontró ninguna impresora instalada en Windows" },
+          { status: 500 }
+        );
+      }
+      try {
+        await sendToWindowsRaw(buffer, printerName);
+        return NextResponse.json({ success: true, transport: "windows-raw", printerName });
+      } catch (rawErr: any) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `RAW print failed (printer: ${printerName}): ${rawErr?.message ?? "unknown"}`,
+          },
+          { status: 500 }
+        );
+      }
+    }
+
     try {
       await sendToUsb(buffer);
       return NextResponse.json({ success: true, transport: "usb" });

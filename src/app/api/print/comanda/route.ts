@@ -26,6 +26,8 @@ interface ComandaRequest {
   saleNumber: number;
   time: string;
   products: KitchenProduct[];
+  /** Windows printer name for RAW-mode spooler print (bypasses driver rendering) */
+  printerName?: string;
 }
 
 // ── String helpers (32-char monospace layout) ─────────────────
@@ -51,7 +53,7 @@ function formatQty(qty: number, unit: string): string {
   return `${display}${unit}`;
 }
 
-// ── USB transport (same as receipt route) ─────────────────────
+// ── Transports (same pattern as receipt route) ────────────────
 
 async function sendToUsb(buffer: Buffer): Promise<void> {
   const device = findByIds(VENDOR_ID, PRODUCT_ID);
@@ -79,6 +81,44 @@ async function sendToUsb(buffer: Buffer): Promise<void> {
     });
   } finally {
     try { device.close(); } catch {}
+  }
+}
+
+async function sendToWindowsRaw(buffer: Buffer, printerName: string): Promise<void> {
+  let printerMod: any;
+  try {
+    printerMod = await import("@thiagoelg/node-printer");
+    printerMod = printerMod.default || printerMod;
+  } catch (err: any) {
+    throw new Error(`node-printer not available: ${err?.message ?? "module not installed"}`);
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    printerMod.printDirect({
+      data: buffer,
+      printer: printerName,
+      type: "RAW",
+      success: () => resolve(),
+      error: (err: Error) => reject(err),
+    });
+  });
+}
+
+async function resolveWindowsPrinter(explicit?: string): Promise<string | null> {
+  if (explicit) return explicit;
+  try {
+    const mod: any = await import("@thiagoelg/node-printer");
+    const printerMod = mod.default || mod;
+    const def = printerMod.getDefaultPrinterName?.();
+    if (def) return def;
+    const printers: any[] = printerMod.getPrinters?.() ?? [];
+    const posMatch = printers.find((p: any) =>
+      /pos|80mm|thermal|receipt|jaltech|xprinter/i.test(p?.name ?? "")
+    );
+    if (posMatch) return posMatch.name;
+    return printers[0]?.name ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -150,9 +190,32 @@ export async function POST(request: Request) {
     printer.append(Buffer.from([0x1B, 0x64, 0x04, 0x1D, 0x56, 0x00]));
 
     const buffer = printer.getBuffer();
-    await sendToUsb(buffer);
 
-    return NextResponse.json({ success: true });
+    const isWindows = process.platform === "win32";
+    if (isWindows) {
+      const printerName = await resolveWindowsPrinter(data.printerName);
+      if (!printerName) {
+        return NextResponse.json(
+          { success: false, error: "No se encontró ninguna impresora instalada en Windows" },
+          { status: 500 },
+        );
+      }
+      try {
+        await sendToWindowsRaw(buffer, printerName);
+        return NextResponse.json({ success: true, transport: "windows-raw", printerName });
+      } catch (rawErr: any) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `RAW print failed (printer: ${printerName}): ${rawErr?.message ?? "unknown"}`,
+          },
+          { status: 500 },
+        );
+      }
+    }
+
+    await sendToUsb(buffer);
+    return NextResponse.json({ success: true, transport: "usb" });
   } catch (err: any) {
     console.error("[/api/print/comanda] Error:", err);
     return NextResponse.json(
