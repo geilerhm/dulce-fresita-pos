@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import db from "@/lib/db/sqlite";
+import { convertQuantity } from "@/lib/utils/units";
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -400,7 +401,15 @@ function rpcDeductInventory(params: { p_sale_id: string }) {
         const ingredient = db.prepare("SELECT * FROM ingredients WHERE id = ?").get(recipe.ingredient_id) as any;
         if (!ingredient) continue;
 
-        const deduction = recipe.quantity * item.quantity;
+        const perUnit = convertQuantity(recipe.quantity, recipe.unit, ingredient.unit);
+        if (perUnit === null) {
+          console.warn(
+            `[fn_deduct_inventory] Unidades incompatibles para "${ingredient.name}": receta=${recipe.quantity}${recipe.unit} vs inventario=${ingredient.unit}. Se omite el descuento.`,
+          );
+          continue;
+        }
+
+        const deduction = perUnit * item.quantity;
         const newStock = Math.max(0, ingredient.stock_quantity - deduction);
 
         db.prepare("UPDATE ingredients SET stock_quantity = ?, updated_at = ? WHERE id = ?")
@@ -482,7 +491,14 @@ function rpcCompleteOrder(params: { p_order_id: string }) {
       for (const recipe of recipes) {
         const ingredient = db.prepare("SELECT * FROM ingredients WHERE id = ?").get(recipe.ingredient_id) as any;
         if (!ingredient) continue;
-        const deduction = recipe.quantity * si.quantity;
+        const perUnit = convertQuantity(recipe.quantity, recipe.unit, ingredient.unit);
+        if (perUnit === null) {
+          console.warn(
+            `[fn_complete_order] Unidades incompatibles para "${ingredient.name}": receta=${recipe.quantity}${recipe.unit} vs inventario=${ingredient.unit}. Se omite el descuento.`,
+          );
+          continue;
+        }
+        const deduction = perUnit * si.quantity;
         db.prepare("UPDATE ingredients SET stock_quantity = ?, updated_at = ? WHERE id = ?")
           .run(Math.max(0, ingredient.stock_quantity - deduction), new Date().toISOString(), recipe.ingredient_id);
         db.prepare(
