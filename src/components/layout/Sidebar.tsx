@@ -72,25 +72,29 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="flex h-screen w-[72px] flex-col items-center border-r border-default-100 bg-white py-4">
-      <Link href="/pos" className="mb-5 group">
+    // `overflow-y-auto` + `shrink-0` on every child lets the sidebar scroll
+    // on short viewports (laptops, split-screen, on-screen keyboard) instead
+    // of clipping the bottom items (Settings, Logout). On tall viewports the
+    // `flex-1` spacer still pushes the controls to the bottom as before.
+    <aside className="flex h-screen w-[72px] flex-col items-center border-r border-default-100 bg-white py-4 overflow-y-auto">
+      <Link href="/pos" className="mb-5 group shrink-0">
         <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-pink-400 shadow-md shadow-primary/25 group-hover:shadow-lg group-hover:shadow-primary/30 transition-shadow">
           <Strawberry size={22} className="text-white" />
         </div>
       </Link>
 
-      <nav className="flex flex-col gap-0.5 w-full px-1.5">
+      <nav className="flex flex-col gap-0.5 w-full px-1.5 shrink-0">
         {NAV_TOP.map(renderItem)}
       </nav>
 
-      <div className="w-8 h-px bg-default-200 my-2" />
+      <div className="w-8 h-px bg-default-200 my-2 shrink-0" />
 
-      <nav className="flex flex-col gap-0.5 w-full px-1.5">
+      <nav className="flex flex-col gap-0.5 w-full px-1.5 shrink-0">
         {NAV_BOTTOM.map(renderItem)}
       </nav>
 
       <div className="flex-1" />
-      <nav className="w-full px-1.5 mb-2 space-y-0.5">
+      <nav className="w-full px-1.5 mb-2 space-y-0.5 shrink-0">
         <OnlineIndicator />
         <FullscreenButton />
         {renderItem({ href: "/settings", label: "Config", Icon: GearSix })}

@@ -90,7 +90,7 @@ export default function LoginPage() {
 
       {/* Right — Form */}
       <div className="flex-1 flex items-center justify-center bg-gray-50 p-6">
-        <div className="w-full max-w-sm">
+        <div data-keyboard-form className="w-full max-w-sm">
           {/* Mobile logo */}
           <div className="flex flex-col items-center mb-8 lg:hidden">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-pink-400 shadow-lg shadow-primary/25 mb-3">

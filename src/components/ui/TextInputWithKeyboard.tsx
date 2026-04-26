@@ -1,7 +1,14 @@
 "use client";
 
-import { useState, useId } from "react";
+import { useState, useId, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Backspace, X, ArrowFatUp } from "@phosphor-icons/react";
+
+// Approximate height of the rendered keyboard panel (5 rows + paddings).
+// Used to detect whether a focused input is hidden under the keyboard so
+// the host form can be nudged upward.
+const KEYBOARD_HEIGHT = 320;
+const SAFE_MARGIN = 16;
 
 interface TextInputWithKeyboardProps {
   value: string;
@@ -25,8 +32,44 @@ export function TextInputWithKeyboard({ value, onChange, placeholder, label, err
   const [shift, setShift] = useState(false);
   const [showSymbols, setShowSymbols] = useState(false);
   const id = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [mounted, setMounted] = useState(false);
 
   const isUpper = uppercase || shift;
+
+  useEffect(() => setMounted(true), []);
+
+  // When the keyboard opens, the fixed panel at the bottom of the viewport
+  // can cover inputs in the lower half of the screen (e.g. password on the
+  // login form). Lift the nearest `[data-keyboard-form]` ancestor upward by
+  // exactly enough pixels to bring the focused input's bottom edge a safe
+  // margin above the keyboard's top edge. This moves the WHOLE form together
+  // so siblings don't overlap. The keyboard panel itself is rendered through
+  // a portal to <body> (see below) so the transform on this ancestor does
+  // not become its containing block — its `position: fixed` keeps anchoring
+  // it to the viewport bottom as designed.
+  useEffect(() => {
+    if (!open) return;
+    const el = inputRef.current;
+    if (!el) return;
+    const host = el.closest<HTMLElement>("[data-keyboard-form]");
+    if (!host) return;
+
+    const raf = requestAnimationFrame(() => {
+      const rect = el.getBoundingClientRect();
+      const safeBottom = window.innerHeight - KEYBOARD_HEIGHT - SAFE_MARGIN;
+      if (rect.bottom > safeBottom) {
+        const offset = Math.ceil(rect.bottom - safeBottom);
+        host.style.transition = "transform 200ms ease";
+        host.style.transform = `translateY(-${offset}px)`;
+      }
+    });
+
+    return () => {
+      cancelAnimationFrame(raf);
+      host.style.transform = "";
+    };
+  }, [open]);
 
   function handleKey(char: string) {
     onChange(value + (isUpper ? char.toUpperCase() : char.toLowerCase()));
@@ -42,6 +85,7 @@ export function TextInputWithKeyboard({ value, onChange, placeholder, label, err
       {label && <label htmlFor={id} className="text-xs font-bold text-default-500 uppercase tracking-wider block mb-1.5">{label}</label>}
       <input
         id={id}
+        ref={inputRef}
         type={password ? "password" : "text"}
         value={value}
         placeholder={placeholder}
@@ -54,7 +98,7 @@ export function TextInputWithKeyboard({ value, onChange, placeholder, label, err
       />
       {error && <p className="text-[11px] text-red-500 mt-1">{error}</p>}
 
-      {open && (
+      {open && mounted && createPortal(
         <>
         <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
         <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-default-200 bg-default-100 px-4 py-2.5 space-y-1.5">
@@ -125,7 +169,8 @@ export function TextInputWithKeyboard({ value, onChange, placeholder, label, err
             </button>
           </div>
         </div>
-        </>
+        </>,
+        document.body,
       )}
     </div>
   );

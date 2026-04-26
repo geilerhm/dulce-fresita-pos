@@ -52,6 +52,7 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("efectivo");
   const [receivedAmount, setReceivedAmount] = useState(0);
   const [processing, setProcessing] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const [success, setSuccess] = useState<SuccessData | null>(null);
   const [showVoid, setShowVoid] = useState(false);
   const blessing = useMemo(() => pickRandomBlessing(), []);
@@ -132,8 +133,12 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
 
   if (!isOpen) return null;
 
-  function handlePrint() {
-    if (!success) return;
+  async function handlePrint() {
+    // Guard against rapid double/triple clicks: if a print is already in flight
+    // (or the success state was already cleared), bail out. The button is also
+    // disabled visually below — this is defense-in-depth.
+    if (!success || printing) return;
+    setPrinting(true);
     const now = new Date();
     const pad2 = (n: number) => String(n).padStart(2, "0");
     const receiptData: ReceiptData = {
@@ -148,7 +153,13 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
       change: success.change,
       cashierName: register?.opened_by || displayName || undefined,
     };
-    printReceipt(receiptData);
+    try {
+      await printReceipt(receiptData);
+    } finally {
+      setPrinting(false);
+      setSuccess(null);
+      onClose();
+    }
   }
 
   // Success fullscreen
@@ -167,12 +178,21 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
             )}
             <p className="text-lg italic text-default-400 mt-2 max-w-xs">&ldquo;{blessing}&rdquo;</p>
             <div className="flex gap-3 mt-4">
-              <button onClick={handlePrint}
-                className="flex items-center gap-2 h-14 px-8 rounded-2xl bg-primary text-white text-base font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all">
-                <Printer size={22} weight="bold" /> Imprimir
+              <button onClick={handlePrint} disabled={printing}
+                className="flex items-center gap-2 h-14 px-8 rounded-2xl bg-primary text-white text-base font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all disabled:opacity-60 disabled:pointer-events-none">
+                {printing ? (
+                  <>
+                    <span className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Imprimiendo...
+                  </>
+                ) : (
+                  <>
+                    <Printer size={22} weight="bold" /> Imprimir
+                  </>
+                )}
               </button>
-              <button onClick={() => { setSuccess(null); onClose(); }}
-                className="flex items-center gap-2 h-14 px-8 rounded-2xl bg-default-100 text-default-600 text-base font-bold hover:bg-default-200 active:scale-[0.97] transition-all">
+              <button onClick={() => { setSuccess(null); onClose(); }} disabled={printing}
+                className="flex items-center gap-2 h-14 px-8 rounded-2xl bg-default-100 text-default-600 text-base font-bold hover:bg-default-200 active:scale-[0.97] transition-all disabled:opacity-60 disabled:pointer-events-none">
                 Cerrar
               </button>
             </div>
