@@ -3,7 +3,9 @@ import { NextResponse } from "next/server";
 import { ThermalPrinter, PrinterTypes, CharacterSet } from "node-thermal-printer";
 import { findByIds } from "usb";
 import path from "path";
-import { access } from "fs/promises";
+import { access, writeFile, unlink, mkdtemp } from "fs/promises";
+import { tmpdir } from "os";
+import { spawn } from "child_process";
 
 // Jaltech POS 80mm — detected via `ioreg -p IOUSB`
 const VENDOR_ID = 0x0483;
@@ -155,12 +157,108 @@ async function sendToWindowsRaw(buffer: Buffer, printerName: string): Promise<vo
 }
 
 /**
+ * Fallback for Windows when @thiagoelg/node-printer is not installed.
+ * Calls into WinSpool.drv via PowerShell (Add-Type P/Invoke) to push
+ * raw ESC/POS bytes through the spooler — same effect as printDirect()
+ * with type="RAW", but without any native compilation.
+ *
+ * Requires PowerShell (present on every supported Windows install).
+ */
+async function sendToWindowsRawViaPowerShell(
+  buffer: Buffer,
+  printerName: string,
+): Promise<void> {
+  const dir = await mkdtemp(path.join(tmpdir(), "df-print-"));
+  const dataFile = path.join(dir, "payload.bin");
+  await writeFile(dataFile, buffer);
+
+  const ps = `
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class RawSpool {
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+  public struct DOCINFOW {
+    [MarshalAs(UnmanagedType.LPWStr)] public string pDocName;
+    [MarshalAs(UnmanagedType.LPWStr)] public string pOutputFile;
+    [MarshalAs(UnmanagedType.LPWStr)] public string pDataType;
+  }
+  [DllImport("winspool.Drv", EntryPoint="OpenPrinterW", SetLastError=true, CharSet=CharSet.Unicode, ExactSpelling=true)]
+  public static extern bool OpenPrinter(string n, out IntPtr h, IntPtr pd);
+  [DllImport("winspool.Drv", EntryPoint="ClosePrinter", SetLastError=true, ExactSpelling=true)]
+  public static extern bool ClosePrinter(IntPtr h);
+  [DllImport("winspool.Drv", EntryPoint="StartDocPrinterW", SetLastError=true, CharSet=CharSet.Unicode, ExactSpelling=true)]
+  public static extern int StartDocPrinter(IntPtr h, int level, ref DOCINFOW di);
+  [DllImport("winspool.Drv", EntryPoint="EndDocPrinter", SetLastError=true, ExactSpelling=true)]
+  public static extern bool EndDocPrinter(IntPtr h);
+  [DllImport("winspool.Drv", EntryPoint="StartPagePrinter", SetLastError=true, ExactSpelling=true)]
+  public static extern bool StartPagePrinter(IntPtr h);
+  [DllImport("winspool.Drv", EntryPoint="EndPagePrinter", SetLastError=true, ExactSpelling=true)]
+  public static extern bool EndPagePrinter(IntPtr h);
+  [DllImport("winspool.Drv", EntryPoint="WritePrinter", SetLastError=true, ExactSpelling=true)]
+  public static extern bool WritePrinter(IntPtr h, IntPtr p, int n, out int w);
+  public static void Send(string printer, byte[] bytes) {
+    IntPtr h; if (!OpenPrinter(printer, out h, IntPtr.Zero)) throw new Exception("OpenPrinter " + Marshal.GetLastWin32Error());
+    try {
+      DOCINFOW di = new DOCINFOW(); di.pDocName = "Dulce Fresita Receipt"; di.pDataType = "RAW";
+      if (StartDocPrinter(h, 1, ref di) == 0) throw new Exception("StartDocPrinter " + Marshal.GetLastWin32Error());
+      try {
+        if (!StartPagePrinter(h)) throw new Exception("StartPagePrinter " + Marshal.GetLastWin32Error());
+        IntPtr p = Marshal.AllocCoTaskMem(bytes.Length);
+        try { Marshal.Copy(bytes, 0, p, bytes.Length); int w; if (!WritePrinter(h, p, bytes.Length, out w)) throw new Exception("WritePrinter " + Marshal.GetLastWin32Error()); }
+        finally { Marshal.FreeCoTaskMem(p); }
+        EndPagePrinter(h);
+      } finally { EndDocPrinter(h); }
+    } finally { ClosePrinter(h); }
+  }
+}
+"@
+$bytes = [System.IO.File]::ReadAllBytes($env:DF_PRINT_FILE)
+[RawSpool]::Send($env:DF_PRINT_NAME, $bytes)
+`;
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps],
+      {
+        env: {
+          ...process.env,
+          DF_PRINT_FILE: dataFile,
+          DF_PRINT_NAME: printerName,
+        },
+        windowsHide: true,
+      },
+    );
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`PowerShell RAW print exited ${code}: ${stderr.trim() || "no stderr"}`));
+    });
+  });
+
+  // Best-effort cleanup; ignore errors so a stuck file doesn't fail a print.
+  try {
+    await unlink(dataFile);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
  * Resolve the best available Windows printer name.
  * Falls back through: explicit → default → POS-looking match → first installed.
  * Returns null only if no printers are installed at all.
  */
 async function resolveWindowsPrinter(explicit?: string): Promise<string | null> {
   if (explicit) return explicit;
+
+  // Try @thiagoelg/node-printer first (fast, in-process).
   try {
     const mod: any = await import("@thiagoelg/node-printer");
     const printerMod = mod.default || mod;
@@ -171,7 +269,43 @@ async function resolveWindowsPrinter(explicit?: string): Promise<string | null> 
       /pos|80mm|thermal|receipt|jaltech|xprinter/i.test(p?.name ?? "")
     );
     if (posMatch) return posMatch.name;
-    return printers[0]?.name ?? null;
+    if (printers[0]?.name) return printers[0].name;
+  } catch {
+    // Module not available — fall through to PowerShell-based discovery.
+  }
+
+  // PowerShell fallback: enumerate via Get-Printer. Same selection rules.
+  try {
+    const stdout = await new Promise<string>((resolve, reject) => {
+      const child = spawn(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "Get-Printer | Where-Object { $_.PrinterStatus -eq 'Normal' } | Select-Object -ExpandProperty Name",
+        ],
+        { windowsHide: true },
+      );
+      let out = "";
+      let err = "";
+      child.stdout.on("data", (c) => (out += c.toString()));
+      child.stderr.on("data", (c) => (err += c.toString()));
+      child.on("error", reject);
+      child.on("close", (code) =>
+        code === 0 ? resolve(out) : reject(new Error(err.trim() || `exit ${code}`)),
+      );
+    });
+    const names = stdout
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const posMatch = names.find((n) =>
+      /pos|80mm|thermal|receipt|jaltech|xprinter/i.test(n),
+    );
+    return posMatch ?? names[0] ?? null;
   } catch {
     return null;
   }
@@ -246,16 +380,38 @@ export async function POST(request: Request) {
     // Logo (centered via hardware — raster images can't be padded) + phone.
     // Business name / NIT / address intentionally omitted — the logo already
     // carries the brand identity.
+    //
+    // IMPORTANT: node-thermal-printer's `printImageBuffer` resets `this.buffer = null`
+    // (see node_modules/node-thermal-printer/lib/types/epson.js:293). Calling
+    // `printer.printImage()` mid-build silently drops the ESC @ reset and any
+    // earlier bytes, which manifested here as the logo "not printing" — actually
+    // the logo bytes were emitted, but everything written before them was wiped.
+    // Workaround: render the logo on a throwaway printer instance, then append
+    // its bytes to the main buffer.
     let logoPrinted = false;
     if (data.showLogo !== false) {
       try {
         await access(LOGO_PATH);
-        printer.append(Buffer.from([0x1B, 0x61, 0x01])); // ESC a 1 — center
-        await printer.printImage(LOGO_PATH);
-        printer.append(Buffer.from([0x1B, 0x61, 0x00])); // ESC a 0 — back to left
+        const imgPrinter = new ThermalPrinter({
+          type: PrinterTypes.EPSON,
+          interface: "tcp://localhost:9100",
+          characterSet: CharacterSet.PC858_EURO,
+          width: LINE_WIDTH,
+          removeSpecialCharacters: false,
+        });
+        await imgPrinter.printImage(LOGO_PATH);
+        const rasterBytes = imgPrinter.getBuffer();
+        printer.append(
+          Buffer.concat([
+            Buffer.from([0x1B, 0x61, 0x01]), // ESC a 1 — center for logo
+            rasterBytes,
+            Buffer.from([0x1B, 0x61, 0x00]), // ESC a 0 — back to left
+          ]),
+        );
         logoPrinted = true;
-      } catch {
-        // Logo file missing — fall back to business name text below
+      } catch (err) {
+        // Logo file missing or render failed — fall back to business name below.
+        console.error("[/api/print] Logo render failed:", err);
       }
     }
 
@@ -400,14 +556,29 @@ export async function POST(request: Request) {
           { status: 500 }
         );
       }
+      // Try the native node-printer path first; if the module isn't built
+      // (no Python/VS C++ toolchain), fall back to PowerShell+WinSpool which
+      // runs on every supported Windows install with no native compile.
+      let nativeErr: string | null = null;
       try {
         await sendToWindowsRaw(buffer, printerName);
         return NextResponse.json({ success: true, transport: "windows-raw", printerName });
       } catch (rawErr: any) {
+        nativeErr = rawErr?.message ?? "unknown";
+      }
+      try {
+        await sendToWindowsRawViaPowerShell(buffer, printerName);
+        return NextResponse.json({
+          success: true,
+          transport: "windows-raw-powershell",
+          printerName,
+          fallbackFromNative: nativeErr,
+        });
+      } catch (psErr: any) {
         return NextResponse.json(
           {
             success: false,
-            error: `RAW print failed (printer: ${printerName}): ${rawErr?.message ?? "unknown"}`,
+            error: `RAW print failed (printer: ${printerName}). Native: ${nativeErr}. PowerShell fallback: ${psErr?.message ?? "unknown"}`,
           },
           { status: 500 }
         );
@@ -477,6 +648,44 @@ export async function GET() {
       nodePrinterError = e?.message ?? "module not available";
     }
 
+    // PowerShell fallback availability — used when nodePrinter isn't built.
+    let powerShellAvailable = false;
+    let powerShellPrinters: string[] = [];
+    let powerShellError: string | null = null;
+    if (process.platform === "win32") {
+      try {
+        const stdout = await new Promise<string>((resolve, reject) => {
+          const child = spawn(
+            "powershell.exe",
+            [
+              "-NoProfile",
+              "-NonInteractive",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-Command",
+              "Get-Printer | Select-Object -ExpandProperty Name",
+            ],
+            { windowsHide: true },
+          );
+          let out = "";
+          let err = "";
+          child.stdout.on("data", (c) => (out += c.toString()));
+          child.stderr.on("data", (c) => (err += c.toString()));
+          child.on("error", reject);
+          child.on("close", (code) =>
+            code === 0 ? resolve(out) : reject(new Error(err.trim() || `exit ${code}`)),
+          );
+        });
+        powerShellAvailable = true;
+        powerShellPrinters = stdout
+          .split(/\r?\n/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+      } catch (e: any) {
+        powerShellError = e?.message ?? "unknown";
+      }
+    }
+
     return NextResponse.json({
       platform: process.platform,
       nodeVersion: process.version,
@@ -491,6 +700,11 @@ export async function GET() {
         error: nodePrinterError,
         availablePrinters,
         defaultPrinter,
+      },
+      powerShell: {
+        available: powerShellAvailable,
+        error: powerShellError,
+        printers: powerShellPrinters,
       },
       lineWidth: LINE_WIDTH,
     });
