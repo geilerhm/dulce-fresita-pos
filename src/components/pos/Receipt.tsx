@@ -5,12 +5,25 @@ import { getReceiptConfig, type ReceiptConfig } from "@/lib/utils/receipt-config
 import { pickRandomBlessing } from "@/lib/utils/blessing-phrases";
 import { toast } from "@/lib/utils/toast";
 
+export interface ReceiptItem {
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  subtotal: number;
+  /**
+   * If present, the printer renders this string in place of the subtotal —
+   * used to print "incluido" for toppings that ship with a product instead
+   * of a price.
+   */
+  note?: string;
+}
+
 export interface ReceiptData {
   businessName: string;
   saleNumber: number;
   date: string;
   time: string;
-  items: { name: string; quantity: number; unitPrice: number; subtotal: number }[];
+  items: ReceiptItem[];
   total: number;
   paymentMethod: "efectivo" | "nequi";
   received?: number;
@@ -75,16 +88,17 @@ function buildReceiptHtml(
 ): string {
   const itemsHtml = data.items
     .map((item) => {
-      const subtotal = formatCOP(item.subtotal);
+      const rightCol = item.note ? escapeHtml(item.note) : formatCOP(item.subtotal);
       const name = escapeHtml(item.name);
-      if (item.quantity > 1) {
-        // Multi-quantity: name on its own line, qty x unit / subtotal below
+      // Items with a note (e.g. toppings marked "incluido") render compact —
+      // no qty x unit breakdown, since price isn't the story for them.
+      if (!item.note && item.quantity > 1) {
         return `
           <div class="item-name">${name}</div>
-          <div class="row item-qty"><span>${item.quantity} x ${formatCOP(item.unitPrice)}</span><span>${subtotal}</span></div>
+          <div class="row item-qty"><span>${item.quantity} x ${formatCOP(item.unitPrice)}</span><span>${rightCol}</span></div>
         `;
       }
-      return `<div class="row"><span>${name}</span><span>${subtotal}</span></div>`;
+      return `<div class="row"><span>${name}</span><span>${rightCol}</span></div>`;
     })
     .join("");
 

@@ -32,6 +32,8 @@ interface ReceiptItem {
   quantity: number;
   unitPrice: number;
   subtotal: number;
+  /** When set, this string is rendered in the right column instead of the price (e.g. "incluido" for included toppings). */
+  note?: string;
 }
 
 interface PrintRequest {
@@ -447,16 +449,19 @@ export async function POST(request: Request) {
     // qty  >  1  →  "Name"                                       (line 1)
     //               "{qty} x {unit}               subtotal"      (line 2)
     for (const item of data.items) {
-      const subtotalStr = formatAmount(item.subtotal);
+      const rightCol = item.note ?? formatAmount(item.subtotal);
 
-      if (item.quantity > 1) {
+      // Items with a note (e.g. "incluido" toppings) render compactly —
+      // never split into name + qty-line, since the right column isn't a
+      // price the cashier would tally.
+      if (!item.note && item.quantity > 1) {
         printer.println(truncate(item.name, LINE_WIDTH));
         const qtyLine = `${item.quantity} x ${formatAmount(item.unitPrice)}`;
-        printer.println(twoCol(qtyLine, subtotalStr));
+        printer.println(twoCol(qtyLine, rightCol));
       } else {
-        const availForName = LINE_WIDTH - subtotalStr.length - 1;
+        const availForName = LINE_WIDTH - rightCol.length - 1;
         const displayName = truncate(item.name, Math.max(8, availForName));
-        printer.println(twoCol(displayName, subtotalStr));
+        printer.println(twoCol(displayName, rightCol));
       }
     }
 

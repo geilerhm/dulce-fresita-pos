@@ -11,14 +11,16 @@ interface Product {
   image_url?: string;
   icon?: string;
   category_slug?: string;
+  /** Optional — only the POS uses it. Pedidos pages omit it. */
+  included_toppings_count?: number;
 }
 
 interface ProductGridProps {
   products: Product[];
-  onProductAdded?: () => void;
+  onProductTap: (product: Product) => void;
 }
 
-export function ProductGrid({ products, onProductAdded }: ProductGridProps) {
+export function ProductGrid({ products, onProductTap }: ProductGridProps) {
   if (products.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-default-300">
@@ -40,7 +42,7 @@ export function ProductGrid({ products, onProductAdded }: ProductGridProps) {
             image_url={product.image_url ?? undefined}
             icon={product.icon ?? undefined}
             category_slug={product.category_slug}
-            onAdded={onProductAdded}
+            onTap={() => onProductTap(product)}
           />
         ))}
       </div>

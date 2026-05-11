@@ -1,9 +1,21 @@
 "use client";
 
+/**
+ * Same UX as the POS CheckoutModal but for a pending order: pre-loads items
+ * and total from the order, lets the cashier change the payment method,
+ * collects cash + computes change, then calls fn_complete_order which:
+ *   1. Creates the sale + sale_items
+ *   2. Deducts inventory
+ *   3. Marks the order as delivered
+ * After that, the printable receipt is shown (same path as POS).
+ *
+ * This is the "skip the whole preparing/ready/delivering dance" path the
+ * cashier asked for: from a pending order to a printed receipt in 2 clicks.
+ */
+
 import { formatCOP } from "@/lib/utils/format";
-import { useCart, type CartItem } from "@/contexts/CartContext";
 import { Money, DeviceMobile, Backspace, ArrowLeft, Check, CheckCircle, Printer } from "@phosphor-icons/react";
-import { printReceipt, type ReceiptData, type ReceiptItem } from "./Receipt";
+import { printReceipt, type ReceiptData, type ReceiptItem } from "@/components/pos/Receipt";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/db/client";
@@ -11,12 +23,31 @@ import { playSuccess, playAdd, playClick } from "@/lib/utils/sounds";
 import { pickRandomBlessing } from "@/lib/utils/blessing-phrases";
 import { toast } from "@/lib/utils/toast";
 import { useCaja } from "@/contexts/CajaContext";
-import { getActiveCompanyId } from "@/lib/db/company";
 import type { PaymentMethod } from "@/lib/utils/constants";
 
-interface CheckoutModalProps {
+interface OrderItem {
+  id: string;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  subtotal: number;
+}
+
+export interface OrderForCheckout {
+  id: string;
+  order_number: number;
+  customer_name: string;
+  payment_method: string;
+  total: number;
+  items: OrderItem[];
+}
+
+interface OrderCheckoutModalProps {
   isOpen: boolean;
+  order: OrderForCheckout | null;
   onClose: () => void;
+  /** Called after the sale completes successfully (close + refresh list). */
+  onCompleted: () => void;
 }
 
 const QUICK_AMOUNTS = [10000, 20000, 50000, 100000];
@@ -27,16 +58,7 @@ const NUMPAD_KEYS = [
   ["00", "0", "DEL"],
 ];
 
-interface SaleItemRow {
-  product_id: string;
-  product_name: string;
-  quantity: number;
-  unit_price: number;
-  subtotal: number;
-}
-
 interface SuccessData {
-  saleId: string;
   saleNumber: number;
   total: number;
   change: number;
@@ -45,74 +67,7 @@ interface SuccessData {
   receiptItems: ReceiptItem[];
 }
 
-/**
- * Flatten a cart line + its toppings into the row(s) that get persisted in
- * sale_items. Toppings become their own sale_items so:
- *   - inventory deduction (fn_deduct_inventory) reads them naturally
- *   - they appear in reports tied to the actual topping product_id
- * Toppings marked as "included" (charge=false) get unit_price=0; the
- * base product price is unchanged regardless of toppings.
- */
-function flattenLineForDb(item: CartItem): SaleItemRow[] {
-  const rows: SaleItemRow[] = [
-    {
-      product_id: item.product_id,
-      product_name: item.name,
-      quantity: item.quantity,
-      unit_price: item.price,
-      subtotal: item.price * item.quantity,
-    },
-  ];
-  for (const t of item.toppings ?? []) {
-    const unit = t.charge ? t.price : 0;
-    rows.push({
-      product_id: t.product_id,
-      product_name: t.name,
-      quantity: item.quantity,
-      unit_price: unit,
-      subtotal: unit * item.quantity,
-    });
-  }
-  return rows;
-}
-
-/**
- * Build the items array passed to the printer. Toppings get prefixed with
- * "+ " and a `note: "incluido"` marker when not charged — the renderer
- * shows that in place of the price.
- */
-function flattenLineForReceipt(item: CartItem): ReceiptItem[] {
-  const rows: ReceiptItem[] = [
-    {
-      name: item.name,
-      quantity: item.quantity,
-      unitPrice: item.price,
-      subtotal: item.price * item.quantity,
-    },
-  ];
-  for (const t of item.toppings ?? []) {
-    if (t.charge) {
-      rows.push({
-        name: `+ ${t.name}`,
-        quantity: item.quantity,
-        unitPrice: t.price,
-        subtotal: t.price * item.quantity,
-      });
-    } else {
-      rows.push({
-        name: `+ ${t.name}`,
-        quantity: item.quantity,
-        unitPrice: 0,
-        subtotal: 0,
-        note: "incluido",
-      });
-    }
-  }
-  return rows;
-}
-
-export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
-  const { items, total, clear, itemCount } = useCart();
+export function OrderCheckoutModal({ isOpen, order, onClose, onCompleted }: OrderCheckoutModalProps) {
   const { register } = useCaja();
   const { displayName, activeCompany } = useAuth();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("efectivo");
@@ -122,16 +77,21 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
   const [success, setSuccess] = useState<SuccessData | null>(null);
   const blessing = useMemo(() => pickRandomBlessing(), []);
 
+  const total = order?.total ?? 0;
+  const itemCount = (order?.items ?? []).reduce((s, i) => s + i.quantity, 0);
   const change = receivedAmount - total;
   const digits = receivedAmount > 0 ? String(receivedAmount) : "";
 
+  // Initial state per-open. Re-seed payment method from the order's recorded
+  // choice so the cashier sees what the customer originally said, but they
+  // can change it before confirming.
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && order) {
       setReceivedAmount(0);
-      setPaymentMethod("efectivo");
+      setPaymentMethod((order.payment_method as PaymentMethod) || "efectivo");
       setSuccess(null);
     }
-  }, [isOpen]);
+  }, [isOpen, order]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -152,47 +112,50 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
   }
 
   const handleConfirm = useCallback(async () => {
-    if (items.length === 0 || processing) return;
+    if (!order || processing) return;
     if (paymentMethod === "efectivo" && receivedAmount < total) {
       toast.error(`Faltan ${formatCOP(total - receivedAmount)} para completar el pago`);
       return;
     }
     setProcessing(true);
 
-    const dbRows = items.flatMap(flattenLineForDb);
-    const receiptItems = items.flatMap(flattenLineForReceipt);
-
     try {
       const client = createClient();
-      const { data: sale, error: saleError } = await client
-        .from("sales")
-        .insert({ total, payment_method: paymentMethod, status: "completed", register_id: register?.id ?? null, company_id: getActiveCompanyId() })
-        .select("id, sale_number")
-        .single();
-      if (saleError) throw saleError;
 
-      const dbItems = dbRows.map((row) => ({ sale_id: sale.id, company_id: getActiveCompanyId(), ...row }));
-      const { error: itemsError } = await client.from("sale_items").insert(dbItems);
-      if (itemsError) throw itemsError;
+      // If the cashier changed the payment method, persist it before the RPC
+      // so fn_complete_order copies the right value onto the sale.
+      if (paymentMethod !== order.payment_method) {
+        await client.from("orders").update({ payment_method: paymentMethod }).eq("id", order.id);
+      }
 
-      await client.rpc("fn_deduct_inventory", { p_sale_id: sale.id });
+      const { data: rpcData, error } = await client.rpc("fn_complete_order", { p_order_id: order.id });
+      if (error || !rpcData) throw new Error(error?.message || "RPC failed");
+
+      const { saleNumber } = rpcData as { saleId: string; saleNumber: number };
+
+      const receiptItems: ReceiptItem[] = order.items.map((i) => ({
+        name: i.product_name,
+        quantity: i.quantity,
+        unitPrice: i.unit_price,
+        subtotal: i.subtotal,
+      }));
 
       playSuccess();
-      clear();
       setSuccess({
-        saleId: sale.id, saleNumber: sale.sale_number, total, change: receivedAmount - total,
-        paymentMethod, received: receivedAmount,
+        saleNumber,
+        total,
+        change: receivedAmount - total,
+        paymentMethod,
+        received: receivedAmount,
         receiptItems,
       });
-      // No auto-close — user decides when to close (may want to print receipt or comanda)
-    } catch (error) {
-      console.error(error);
-      toast.error("Error al procesar la venta");
+    } catch (e) {
+      console.error(e);
+      toast.error("Error al cobrar el pedido");
+    } finally {
+      setProcessing(false);
     }
-    finally { setProcessing(false); }
-  }, [items, total, paymentMethod, processing, clear, register, receivedAmount]);
-
-  if (!isOpen) return null;
+  }, [order, total, paymentMethod, processing, receivedAmount]);
 
   async function handlePrint() {
     if (!success || printing) return;
@@ -216,47 +179,48 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
     } finally {
       setPrinting(false);
       setSuccess(null);
-      onClose();
+      onCompleted();
     }
   }
 
-  // Success fullscreen
+  if (!isOpen || !order) return null;
+
+  // Success fullscreen — same as POS so the cashier feels at home.
   if (success) {
     return (
-      <>
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white">
-          <div className="animate-in zoom-in-95 fade-in duration-300 flex flex-col items-center gap-4 text-center">
-            <div className="flex h-24 w-24 items-center justify-center rounded-full bg-emerald-100">
-              <CheckCircle size={48} weight="fill" className="text-emerald-600" />
-            </div>
-            <p className="text-3xl font-bold text-default-800">Venta #{success.saleNumber}</p>
-            <p className="text-4xl font-extrabold text-emerald-600 tabular-nums">{formatCOP(success.total)}</p>
-            {success.change > 0 && (
-              <p className="text-xl text-default-500 tabular-nums">Cambio: {formatCOP(success.change)}</p>
-            )}
-            <p className="text-lg italic text-default-400 mt-2 max-w-xs">&ldquo;{blessing}&rdquo;</p>
-            <div className="flex gap-3 mt-4">
-              <button onClick={handlePrint} disabled={printing}
-                className="flex items-center gap-2 h-14 px-8 rounded-2xl bg-primary text-white text-base font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all disabled:opacity-60 disabled:pointer-events-none">
-                {printing ? (
-                  <>
-                    <span className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Imprimiendo...
-                  </>
-                ) : (
-                  <>
-                    <Printer size={22} weight="bold" /> Imprimir
-                  </>
-                )}
-              </button>
-              <button onClick={() => { setSuccess(null); onClose(); }} disabled={printing}
-                className="flex items-center gap-2 h-14 px-8 rounded-2xl bg-default-100 text-default-600 text-base font-bold hover:bg-default-200 active:scale-[0.97] transition-all disabled:opacity-60 disabled:pointer-events-none">
-                Cerrar
-              </button>
-            </div>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-white">
+        <div className="animate-in zoom-in-95 fade-in duration-300 flex flex-col items-center gap-4 text-center">
+          <div className="flex h-24 w-24 items-center justify-center rounded-full bg-emerald-100">
+            <CheckCircle size={48} weight="fill" className="text-emerald-600" />
+          </div>
+          <p className="text-3xl font-bold text-default-800">Venta #{success.saleNumber}</p>
+          <p className="text-sm font-medium text-default-400">Pedido #{order.order_number} · {order.customer_name}</p>
+          <p className="text-4xl font-extrabold text-emerald-600 tabular-nums">{formatCOP(success.total)}</p>
+          {success.change > 0 && (
+            <p className="text-xl text-default-500 tabular-nums">Cambio: {formatCOP(success.change)}</p>
+          )}
+          <p className="text-lg italic text-default-400 mt-2 max-w-xs">&ldquo;{blessing}&rdquo;</p>
+          <div className="flex gap-3 mt-4">
+            <button onClick={handlePrint} disabled={printing}
+              className="flex items-center gap-2 h-14 px-8 rounded-2xl bg-primary text-white text-base font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all disabled:opacity-60 disabled:pointer-events-none">
+              {printing ? (
+                <>
+                  <span className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Imprimiendo...
+                </>
+              ) : (
+                <>
+                  <Printer size={22} weight="bold" /> Imprimir
+                </>
+              )}
+            </button>
+            <button onClick={() => { setSuccess(null); onCompleted(); }} disabled={printing}
+              className="flex items-center gap-2 h-14 px-8 rounded-2xl bg-default-100 text-default-600 text-base font-bold hover:bg-default-200 active:scale-[0.97] transition-all disabled:opacity-60 disabled:pointer-events-none">
+              Cerrar
+            </button>
           </div>
         </div>
-      </>
+      </div>
     );
   }
 
@@ -264,7 +228,6 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
     <div className="fixed inset-0 z-50 flex bg-white">
       {/* LEFT — Order summary */}
       <div className="w-[45%] flex flex-col border-r border-default-100 bg-gray-50">
-        {/* Header */}
         <div className="flex items-center gap-3 px-6 py-4 border-b border-default-100 bg-white shrink-0">
           <button
             onClick={onClose}
@@ -272,44 +235,30 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
           >
             <ArrowLeft size={20} className="text-default-500" />
           </button>
-          <h2 className="text-lg font-bold text-default-800">Resumen</h2>
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] font-bold text-default-400 uppercase tracking-wider">Cobrar pedido</p>
+            <h2 className="text-lg font-bold text-default-800 line-clamp-1">#{order.order_number} · {order.customer_name}</h2>
+          </div>
           <span className="ml-auto text-xs font-bold text-default-400 bg-default-100 rounded-full px-2.5 py-1">
             {itemCount} items
           </span>
         </div>
 
-        {/* Items — scrollable independently */}
-        <div className="flex-1 overflow-auto p-5 space-y-2">
-          {items.map((item) => (
-            <div key={item.line_id}>
-              <div className="flex items-start justify-between gap-3 py-1.5">
-                <span className="text-sm font-medium text-default-700 line-clamp-1 flex-1 min-w-0">
-                  {item.quantity > 1 && <span className="text-default-400 tabular-nums">{item.quantity}× </span>}
-                  {item.name}
-                </span>
-                <span className="text-sm font-bold text-default-800 shrink-0 tabular-nums">
-                  {formatCOP(item.price * item.quantity)}
-                </span>
-              </div>
-              {item.toppings && item.toppings.length > 0 && (
-                <ul className="pl-3 space-y-0.5">
-                  {item.toppings.map((t) => (
-                    <li key={t.product_id} className="flex items-start justify-between gap-3 py-0.5">
-                      <span className="text-xs text-default-400 line-clamp-1 flex-1 min-w-0">
-                        + {t.name}
-                      </span>
-                      <span className={`text-xs shrink-0 tabular-nums ${t.charge ? "text-amber-600 font-semibold" : "text-default-300 italic"}`}>
-                        {t.charge ? `+${formatCOP(t.price * item.quantity)}` : "incluido"}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+        {/* Items */}
+        <div className="flex-1 overflow-auto p-5 space-y-1">
+          {order.items.map((item) => (
+            <div key={item.id} className="flex items-start justify-between gap-3 py-1.5">
+              <span className="text-sm font-medium text-default-700 line-clamp-1 flex-1 min-w-0">
+                {item.quantity > 1 && <span className="text-default-400 tabular-nums">{item.quantity}× </span>}
+                {item.product_name}
+              </span>
+              <span className="text-sm font-bold text-default-800 shrink-0 tabular-nums">
+                {formatCOP(item.subtotal)}
+              </span>
             </div>
           ))}
         </div>
 
-        {/* Total + Cancel — always visible at bottom */}
         <div className="border-t border-default-100 bg-white px-6 py-4 shrink-0 space-y-3">
           <div className="flex justify-between items-center">
             <span className="text-sm text-default-500">Total</span>
@@ -326,7 +275,6 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
 
       {/* RIGHT — Payment + Numpad */}
       <div className="flex-1 flex flex-col p-6 overflow-auto">
-        {/* Payment method */}
         <div className="grid grid-cols-2 gap-3 mb-5 shrink-0">
           {([
             { id: "efectivo" as PaymentMethod, label: "Efectivo", Icon: Money },
@@ -347,10 +295,8 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
           ))}
         </div>
 
-        {/* Cash section */}
         {paymentMethod === "efectivo" && (
           <div className="flex-1 flex flex-col">
-            {/* Quick amounts */}
             <div className="flex gap-2 mb-3 shrink-0">
               {QUICK_AMOUNTS.map((amt) => (
                 <button
@@ -371,7 +317,6 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
               </button>
             </div>
 
-            {/* Display */}
             <button
               onClick={() => setReceivedAmount(0)}
               className="w-full rounded-2xl bg-default-50 border border-default-100 px-5 py-3 text-center mb-3 hover:bg-default-100 transition-colors shrink-0"
@@ -382,7 +327,6 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
               </p>
             </button>
 
-            {/* Numpad */}
             <div className="grid grid-cols-3 gap-2 mb-3 shrink-0 flex-1">
               {NUMPAD_KEYS.flat().map((key) => (
                 <button
@@ -399,7 +343,6 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
               ))}
             </div>
 
-            {/* Change / Missing */}
             {receivedAmount >= total && receivedAmount > 0 && (
               <div className="flex justify-between items-center rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 mb-3 shrink-0">
                 <span className="text-sm font-semibold text-emerald-700">Cambio</span>
@@ -415,7 +358,6 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
           </div>
         )}
 
-        {/* Nequi: just confirm, no numpad needed */}
         {paymentMethod === "nequi" && (
           <div className="flex-1 flex flex-col items-center justify-center text-center">
             <DeviceMobile size={48} weight="duotone" className="text-primary mb-4" />
@@ -425,7 +367,6 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
           </div>
         )}
 
-        {/* Confirm button — always at bottom */}
         <button
           onClick={handleConfirm}
           disabled={processing}
@@ -439,7 +380,7 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
           ) : (
             <>
               <Check size={24} weight="bold" />
-              Confirmar {formatCOP(total)}
+              Cobrar {formatCOP(total)}
             </>
           )}
         </button>

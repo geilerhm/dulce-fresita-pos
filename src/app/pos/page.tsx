@@ -5,18 +5,15 @@ import { createClient } from "@/lib/db/client";
 import { useEffect, useState } from "react";
 import { getActiveCompanyId } from "@/lib/db/company";
 import { useCaja } from "@/contexts/CajaContext";
-import { useRouter } from "next/navigation";
-import { Wallet } from "@phosphor-icons/react";
 
 interface Category { id: string; name: string; slug: string; icon?: string; }
-interface Product { id: string; ref: string; name: string; price: number; image_url?: string; icon?: string; category_slug?: string; }
+interface Product { id: string; ref: string; name: string; price: number; image_url?: string; icon?: string; category_slug?: string; included_toppings_count: number; }
 
 export default function POSPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const { register, loading: cajaLoading } = useCaja();
-  const router = useRouter();
+  const { loading: cajaLoading } = useCaja();
 
   useEffect(() => {
     const client = createClient();
@@ -25,12 +22,13 @@ export default function POSPage() {
 
     Promise.all([
       client.from("categories").select("id, name, slug, icon").eq("type", "product").eq("company_id", companyId).order("sort_order"),
-      client.from("products").select("id, ref, name, price, image_url, icon, category:categories(slug)").eq("active", true).eq("available_in_pos", true).eq("company_id", companyId).order("sort_order"),
+      client.from("products").select("id, ref, name, price, image_url, icon, included_toppings_count, category:categories(slug)").eq("active", true).eq("available_in_pos", true).eq("company_id", companyId).order("sort_order"),
     ]).then(([catRes, prodRes]) => {
       const cats = (catRes.data ?? []) as Category[];
       const prods = (prodRes.data ?? []).map((p: Record<string, unknown>) => ({
         id: p.id as string, ref: p.ref as string, name: p.name as string, price: p.price as number,
         image_url: p.image_url as string | undefined, icon: p.icon as string | undefined,
+        included_toppings_count: (p.included_toppings_count as number | null) ?? 0,
         category_slug: (p.category as { slug: string } | null)?.slug ?? undefined,
       }));
 
@@ -50,24 +48,10 @@ export default function POSPage() {
     );
   }
 
-  if (!register) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center bg-gray-50 gap-4">
-        <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10">
-          <Wallet size={40} weight="duotone" className="text-primary" />
-        </div>
-        <h2 className="text-xl font-bold text-default-800">Caja cerrada</h2>
-        <p className="text-sm text-default-400 text-center max-w-xs">Abre la caja antes de vender para registrar todas las transacciones</p>
-        <button
-          onClick={() => router.push("/caja")}
-          className="h-14 px-8 rounded-2xl bg-primary text-white text-base font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all flex items-center gap-2"
-        >
-          <Wallet size={20} weight="bold" />
-          Abrir Caja
-        </button>
-      </div>
-    );
-  }
+  // No hard block on "caja cerrada" anymore — POS is also the entry point
+  // for creating deferred orders (which don't need a register). The Cart's
+  // built-in NoCajaWarningModal still kicks in if the cashier hits "Cobrar"
+  // without a register open.
 
   if (products.length === 0) {
     return (

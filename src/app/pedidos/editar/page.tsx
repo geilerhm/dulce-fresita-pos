@@ -7,7 +7,7 @@ import { getActiveCompanyId } from "@/lib/db/company";
 import { formatCOP } from "@/lib/utils/format";
 import { ProductIcon } from "@/lib/utils/product-icons";
 import { toast } from "@/lib/utils/toast";
-import { playAdd, playRemove, playClick } from "@/lib/utils/sounds";
+import { playAdd, playClick } from "@/lib/utils/sounds";
 import { CartProvider, useCart } from "@/contexts/CartContext";
 import { CategoryTabs } from "@/components/pos/CategoryTabs";
 import { ProductGrid } from "@/components/pos/ProductGrid";
@@ -97,7 +97,7 @@ export default function EditarPedidoPage() {
 
 function EditClient({ order, orderItems, categories, products }: { order: OrderData; orderItems: OrderItemData[]; categories: Category[]; products: Product[] }) {
   const router = useRouter();
-  const { items, total, itemCount, clear, increment, decrement, removeItem, addItem } = useCart();
+  const { items, total, itemCount, clear, increment, decrement, addItem } = useCart();
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -275,7 +275,19 @@ function EditClient({ order, orderItems, categories, products }: { order: OrderD
         </div>
 
         <div className="flex-1 overflow-auto bg-gray-50" onClick={() => keyboardOpen && setKeyboardOpen(false)}>
-          <ProductGrid products={filteredProducts} />
+          <ProductGrid
+            products={filteredProducts}
+            onProductTap={(p) => {
+              addItem({
+                product_id: p.id,
+                name: p.name,
+                price: p.price,
+                image_url: p.image_url,
+                category_slug: p.category_slug,
+              });
+              playAdd();
+            }}
+          />
         </div>
 
         {keyboardOpen && (
@@ -328,17 +340,17 @@ function EditClient({ order, orderItems, categories, products }: { order: OrderD
           ) : (
             <div className="divide-y divide-default-100">
               {items.map((item) => (
-                <div key={item.product_id} className="flex items-center gap-2 py-2.5 px-3">
+                <div key={item.line_id} className="flex items-center gap-2 py-2.5 px-3">
                   <div className="flex-1 min-w-0 max-w-[140px]">
                     <p className="text-sm font-medium text-default-700 leading-tight line-clamp-2">{item.name}</p>
                     <p className="text-[11px] text-default-400 tabular-nums mt-0.5">{formatCOP(item.price)}</p>
                   </div>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => decrement(item.product_id)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-default-200 bg-white text-default-500 hover:bg-default-100 active:scale-90 transition-all">
+                    <button onClick={() => decrement(item.line_id)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-default-200 bg-white text-default-500 hover:bg-default-100 active:scale-90 transition-all">
                       <Minus size={14} weight="bold" />
                     </button>
                     <span className="w-7 text-center text-sm font-bold text-default-800 tabular-nums">{item.quantity}</span>
-                    <button onClick={() => increment(item.product_id)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-default-200 bg-white text-default-500 hover:bg-default-100 active:scale-90 transition-all">
+                    <button onClick={() => increment(item.line_id)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-default-200 bg-white text-default-500 hover:bg-default-100 active:scale-90 transition-all">
                       <Plus size={14} weight="bold" />
                     </button>
                   </div>

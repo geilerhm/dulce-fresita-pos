@@ -26,6 +26,7 @@ import {
   Trash,
   Backspace,
   Printer,
+  Gift,
 } from "@phosphor-icons/react";
 import { buildKitchenTicket, printKitchenTicket } from "@/components/pos/KitchenTicket";
 import { SearchWithKeyboard } from "@/components/ui/SearchWithKeyboard";
@@ -53,6 +54,7 @@ interface Product {
   available_in_pos: boolean;
   active: boolean;
   sort_order: number;
+  included_toppings_count: number;
 }
 
 interface RecipeRow { id: string; ingredient_id: string; ingredient_name: string; quantity: number; unit: string; cost_per_unit: number; }
@@ -74,6 +76,7 @@ const EMPTY_PRODUCT: Omit<Product, "id" | "category_name"> = {
   available_in_pos: true,
   active: true,
   sort_order: 0,
+  included_toppings_count: 0,
 };
 
 // ── Main Page ──────────────────────────────────────
@@ -122,7 +125,7 @@ export default function ProductosPage() {
     if (!companyId) { setLoading(false); return; }
     const [{ data: cats }, { data: prods }] = await Promise.all([
       supabase.from("categories").select("id, name, slug").eq("company_id", companyId).eq("type", "product").order("sort_order"),
-      supabase.from("products").select("id, ref, name, price, cost, description, icon, category_id, available_in_pos, active, sort_order, category:categories(name)").eq("company_id", companyId).order("sort_order"),
+      supabase.from("products").select("id, ref, name, price, cost, description, icon, category_id, available_in_pos, active, sort_order, included_toppings_count, category:categories(name)").eq("company_id", companyId).order("sort_order"),
     ]);
     setCategories(cats ?? []);
     setProducts(
@@ -131,6 +134,7 @@ export default function ProductosPage() {
         cost: p.cost ?? 0,
         description: p.description ?? "",
         icon: p.icon ?? "IceCream",
+        included_toppings_count: p.included_toppings_count ?? 0,
         category_name: (p.category as unknown as { name: string } | null)?.name ?? "",
       }))
     );
@@ -269,7 +273,7 @@ export default function ProductosPage() {
     const p = product || editProduct;
     if (!p) return;
     setEditProduct(p);
-    setForm({ ref: p.ref, name: p.name, price: p.price, cost: p.cost, description: p.description, icon: p.icon, category_id: p.category_id, available_in_pos: p.available_in_pos, active: p.active, sort_order: p.sort_order });
+    setForm({ ref: p.ref, name: p.name, price: p.price, cost: p.cost, description: p.description, icon: p.icon, category_id: p.category_id, available_in_pos: p.available_in_pos, active: p.active, sort_order: p.sort_order, included_toppings_count: p.included_toppings_count ?? 0 });
     setView("edit");
     setConfirmDelete(false);
     setRightTab("icon");
@@ -393,7 +397,7 @@ export default function ProductosPage() {
     if (!form.category_id) { toast.error("Selecciona una categoría"); return; }
 
     setSaving(true);
-    const payload = { ref: form.ref, name: form.name, price: form.price, cost: form.cost, description: form.description, icon: form.icon, category_id: form.category_id, available_in_pos: form.available_in_pos, active: form.active, sort_order: form.sort_order };
+    const payload = { ref: form.ref, name: form.name, price: form.price, cost: form.cost, description: form.description, icon: form.icon, category_id: form.category_id, available_in_pos: form.available_in_pos, active: form.active, sort_order: form.sort_order, included_toppings_count: Math.max(0, form.included_toppings_count | 0) };
     if (view === "edit" && editProduct) {
       const { error } = await supabase.from("products").update(payload).eq("id", editProduct.id).eq("company_id", getActiveCompanyId());
       if (error) { toast.error(error.code === "23505" ? "Este código ya existe" : `Error: ${error.message}`); setSaving(false); return; }
@@ -404,7 +408,7 @@ export default function ProductosPage() {
       fetchData();
     } else {
       // Create product, then open in edit mode so user can add ingredients
-      const { data, error } = await supabase.from("products").insert({ ...payload, company_id: getActiveCompanyId() }).select("id, ref, name, price, cost, description, icon, category_id, available_in_pos, active, sort_order").single();
+      const { data, error } = await supabase.from("products").insert({ ...payload, company_id: getActiveCompanyId() }).select("id, ref, name, price, cost, description, icon, category_id, available_in_pos, active, sort_order, included_toppings_count").single();
       if (error) { toast.error(error.code === "23505" ? "Este código ya existe" : `Error: ${error.message}`); setSaving(false); return; }
       await fetchData();
       setSaving(false);
@@ -498,6 +502,12 @@ export default function ProductosPage() {
                 {editProduct.available_in_pos && (
                   <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">En POS</span>
                 )}
+                {(editProduct.included_toppings_count ?? 0) > 0 && (
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full inline-flex items-center gap-1">
+                    <Gift size={12} weight="fill" />
+                    {editProduct.included_toppings_count} topping{editProduct.included_toppings_count === 1 ? "" : "s"} incluido{editProduct.included_toppings_count === 1 ? "" : "s"}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -508,7 +518,11 @@ export default function ProductosPage() {
               <button
                 onClick={async () => {
                   const data = await buildKitchenTicket(0, [{ name: editProduct.name, product_id: editProduct.id, quantity: 1 }]);
-                  if (data.products.length > 0) printKitchenTicket(data);
+                  // buildKitchenTicket now keeps products without recipe, so
+                  // check ingredients total here to keep the "Sin ingredientes"
+                  // warning for the admin "imprimir receta" use case.
+                  const totalIngs = data.products.reduce((s, p) => s + p.ingredients.length, 0);
+                  if (totalIngs > 0) printKitchenTicket(data);
                   else toast.warning("Sin ingredientes");
                 }}
                 className="w-full h-12 rounded-2xl bg-amber-500 text-white text-sm font-bold shadow-lg shadow-amber-500/25 hover:brightness-105 active:scale-[0.97] transition-all flex items-center justify-center gap-2"
@@ -788,6 +802,43 @@ export default function ProductosPage() {
                       <span className={`absolute top-1 left-1 w-6 h-6 rounded-full bg-white shadow transition-transform ${form.available_in_pos ? "translate-x-6" : ""}`} />
                     </button>
                   </div>
+                  {(() => {
+                    const n = form.included_toppings_count | 0;
+                    const on = n > 0;
+                    return (
+                      <div className={`rounded-2xl border p-4 transition-colors ${on ? "bg-emerald-50 border-emerald-200" : "bg-default-50 border-default-100"}`}>
+                        <div className="flex items-center gap-3">
+                          <div className={`flex h-10 w-10 items-center justify-center rounded-xl shrink-0 ${on ? "bg-emerald-500 text-white" : "bg-default-200 text-default-400"}`}>
+                            <Gift size={20} weight={on ? "fill" : "duotone"} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-default-800">Toppings incluidos</p>
+                            <p className="text-[11px] text-default-500">
+                              {on
+                                ? `Abre el modal y deja escoger ${n} topping${n === 1 ? "" : "s"} gratis`
+                                : "Pon un número mayor a 0 para que este producto acepte toppings"}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button type="button"
+                              onClick={() => setForm((f) => ({ ...f, included_toppings_count: Math.max(0, (f.included_toppings_count | 0) - 1) }))}
+                              disabled={n === 0}
+                              className="flex h-10 w-10 items-center justify-center rounded-xl border border-default-200 bg-white text-default-600 hover:bg-default-100 active:scale-90 transition-all disabled:opacity-30">
+                              <span className="text-lg font-bold">−</span>
+                            </button>
+                            <span className={`w-8 text-center text-lg font-extrabold tabular-nums ${on ? "text-emerald-700" : "text-default-300"}`}>
+                              {n}
+                            </span>
+                            <button type="button"
+                              onClick={() => setForm((f) => ({ ...f, included_toppings_count: (f.included_toppings_count | 0) + 1 }))}
+                              className="flex h-10 w-10 items-center justify-center rounded-xl border border-default-200 bg-white text-default-600 hover:bg-default-100 active:scale-90 transition-all">
+                              <span className="text-lg font-bold">+</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </>
             ) : view === "new" ? (

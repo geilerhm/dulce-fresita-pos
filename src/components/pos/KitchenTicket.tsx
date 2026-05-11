@@ -25,6 +25,15 @@ export interface KitchenTicketData {
   saleNumber: number;
   time: string;
   products: KitchenProduct[];
+  /** "sale" prints "COMANDA #N" (default), "order" prints "PEDIDO #N" */
+  kind?: "sale" | "order";
+  /** Optional customer/order context — rendered only when present.
+   *  Useful for /pedidos so the kitchen knows for whom the order is. */
+  customerName?: string;
+  orderType?: "local" | "delivery";
+  deliveryAddress?: string;
+  scheduledTime?: string;
+  notes?: string;
 }
 
 /** Fetch recipe ingredients for a list of sold items */
@@ -55,19 +64,20 @@ export async function buildKitchenTicket(
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
 
-  const products: KitchenProduct[] = items
-    .filter((item) => (recipeMap.get(item.product_id)?.length ?? 0) > 0)
-    .map((item) => {
-      const ings = recipeMap.get(item.product_id) ?? [];
-      return {
-        name: item.name,
-        quantity: item.quantity,
-        ingredients: ings.map((ing) => ({
-          ...ing,
-          quantity: ing.quantity * item.quantity,
-        })),
-      };
-    });
+  // Include every item — products without a recipe still need to appear so
+  // the kitchen knows what was ordered. Their ingredients array stays empty,
+  // and the renderer skips the sub-lines for them.
+  const products: KitchenProduct[] = items.map((item) => {
+    const ings = recipeMap.get(item.product_id) ?? [];
+    return {
+      name: item.name,
+      quantity: item.quantity,
+      ingredients: ings.map((ing) => ({
+        ...ing,
+        quantity: ing.quantity * item.quantity,
+      })),
+    };
+  });
 
   return {
     saleNumber,
@@ -101,11 +111,46 @@ async function printKitchenBrowser(data: KitchenTicketData) {
     )
     .join("");
 
+  const isOrder = data.kind === "order";
+  const title = isOrder ? "PEDIDO" : "COMANDA";
+
+  // Customer/order context block — only when any of the order fields is set.
+  // Each line uses inline-styles so the printed HTML survives the
+  // data: URL load that Electron silent-print uses.
+  const hasOrderInfo =
+    !!data.customerName || !!data.orderType || !!data.deliveryAddress
+    || !!data.scheduledTime || !!data.notes;
+
+  const labelRow = (label: string, value: string) =>
+    `<div style="display:flex;gap:6px;font-size:12px;padding:2px 0;">
+       <span style="color:#666;min-width:62px;">${label}</span>
+       <span style="font-weight:bold;flex:1;">${value}</span>
+     </div>`;
+
+  const orderInfoHtml = hasOrderInfo
+    ? `
+      <div style="border:2px solid #000;padding:6px 8px;margin:6px 0;">
+        ${data.customerName ? labelRow("Cliente:", data.customerName) : ""}
+        ${data.orderType ? labelRow("Tipo:", data.orderType === "delivery" ? "Domicilio" : "Local") : ""}
+        ${data.deliveryAddress ? labelRow("Dirección:", data.deliveryAddress) : ""}
+        ${data.scheduledTime ? labelRow("Hora:", data.scheduledTime) : ""}
+      </div>
+    `
+    : "";
+
+  const notesHtml = data.notes
+    ? `
+      <div class="divider"></div>
+      <div style="font-size:11px;font-weight:bold;text-transform:uppercase;color:#666;margin-bottom:4px;">Notas</div>
+      <div style="font-size:13px;padding:4px 8px;background:#f3f3f3;border-radius:4px;">${data.notes}</div>
+    `
+    : "";
+
   const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Comanda #${data.saleNumber}</title>
+  <title>${title} #${data.saleNumber}</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family: 'Courier New', monospace; width: 80mm; padding: 4mm; color: #000; }
@@ -116,10 +161,12 @@ async function printKitchenBrowser(data: KitchenTicketData) {
   </style>
 </head>
 <body>
-  <div class="header">COMANDA #${data.saleNumber}</div>
+  <div class="header">${title} #${data.saleNumber}</div>
   <div class="meta">${data.time}</div>
+  ${orderInfoHtml}
   <div class="divider"></div>
   ${productsHtml}
+  ${notesHtml}
   <div class="divider"></div>
   <div style="text-align:center;font-size:10px;color:#999;margin-top:8px;">
     ${data.products.reduce((s, p) => s + p.quantity, 0)} productos - ${data.products.reduce((s, p) => s + p.ingredients.length, 0)} ingredientes

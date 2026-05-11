@@ -1,6 +1,6 @@
 "use client";
 
-import { useCart } from "@/contexts/CartContext";
+import { useCart, type CartItem } from "@/contexts/CartContext";
 import { formatCOP } from "@/lib/utils/format";
 import { Minus, Plus, Trash, ShoppingCart } from "@phosphor-icons/react";
 import { playRemove } from "@/lib/utils/sounds";
@@ -18,8 +18,25 @@ function isAddon(name: string, categorySlug?: string): boolean {
     name.toLowerCase().startsWith("adición");
 }
 
+function lineSubtotal(item: CartItem): number {
+  const toppingsCharged = (item.toppings ?? []).reduce(
+    (s, t) => s + (t.charge ? t.price : 0),
+    0,
+  );
+  return (item.price + toppingsCharged) * item.quantity;
+}
 
-export function Cart() {
+interface CartProps {
+  /** When provided, tapping the name area of a non-addon line invokes this
+   *  callback. The parent opens ToppingsModal in edit mode for that line. */
+  onEditLine?: (item: CartItem) => void;
+  /** Optional secondary action button rendered below the primary "Cobrar"
+   *  one. The POS uses this to expose "Datos del cliente →" so the cashier
+   *  can save the current cart as a deferred order. */
+  secondaryAction?: { label: string; onClick: () => void };
+}
+
+export function Cart({ onEditLine, secondaryAction }: CartProps = {}) {
   const { items, total, increment, decrement, removeItem, clear, itemCount } = useCart();
   const { register } = useCaja();
   const [showCheckout, setShowCheckout] = useState(false);
@@ -72,42 +89,91 @@ export function Cart() {
                 const addon = isAddon(item.name, item.category_slug);
 
                 return (
-                  <SwipeableRow key={item.product_id} onDelete={() => { removeItem(item.product_id); playRemove(); }}>
-                    <div className={`flex items-center gap-2 py-2.5 px-3 ${addon ? "pl-6" : ""}`}>
-                      {addon && <span className="text-xs text-default-300">+</span>}
+                  <SwipeableRow key={item.line_id} onDelete={() => { removeItem(item.line_id); playRemove(); }}>
+                    <div className={`py-2.5 px-3 ${addon ? "pl-6" : ""}`}>
+                      <div className="flex items-center gap-2">
+                        {addon && <span className="text-xs text-default-300">+</span>}
 
-                      <div className="flex-1 min-w-0 max-w-[140px]">
-                        <p className={`font-medium text-default-700 leading-tight ${addon ? "text-xs truncate" : "text-sm line-clamp-2"}`}>
-                          {item.name}
-                        </p>
-                        {!addon && (
-                          <p className="text-[11px] text-default-400 tabular-nums mt-0.5">{formatCOP(item.price)}</p>
+                        {onEditLine && !addon ? (
+                          <button
+                            onClick={() => onEditLine(item)}
+                            className="flex-1 min-w-0 max-w-[140px] text-left -mx-1 px-1 py-1 rounded-lg hover:bg-default-50 active:scale-[0.98] transition-all"
+                          >
+                            <p className="font-medium text-default-700 leading-tight text-sm line-clamp-2">
+                              {item.name}
+                            </p>
+                            <p className="text-[11px] text-default-400 tabular-nums mt-0.5">{formatCOP(item.price)}</p>
+                          </button>
+                        ) : (
+                          <div className="flex-1 min-w-0 max-w-[140px]">
+                            <p className={`font-medium text-default-700 leading-tight ${addon ? "text-xs truncate" : "text-sm line-clamp-2"}`}>
+                              {item.name}
+                            </p>
+                            {!addon && (
+                              <p className="text-[11px] text-default-400 tabular-nums mt-0.5">{formatCOP(item.price)}</p>
+                            )}
+                          </div>
                         )}
-                      </div>
 
-                      {/* Quantity */}
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => decrement(item.product_id)}
-                          className="flex h-10 w-10 items-center justify-center rounded-xl border border-default-200 bg-white text-default-500 hover:bg-default-100 active:scale-90 transition-all"
-                        >
-                          <Minus size={14} weight="bold" />
-                        </button>
-                        <span className="w-7 text-center text-sm font-bold text-default-800 tabular-nums">
-                          {item.quantity}
+                        {/* Quantity */}
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => decrement(item.line_id)}
+                            className="flex h-10 w-10 items-center justify-center rounded-xl border border-default-200 bg-white text-default-500 hover:bg-default-100 active:scale-90 transition-all"
+                          >
+                            <Minus size={14} weight="bold" />
+                          </button>
+                          <span className="w-7 text-center text-sm font-bold text-default-800 tabular-nums">
+                            {item.quantity}
+                          </span>
+                          <button
+                            onClick={() => increment(item.line_id)}
+                            className="flex h-10 w-10 items-center justify-center rounded-xl border border-default-200 bg-white text-default-500 hover:bg-default-100 active:scale-90 transition-all"
+                          >
+                            <Plus size={14} weight="bold" />
+                          </button>
+                        </div>
+
+                        {/* Subtotal */}
+                        <span className={`w-[72px] text-right font-bold tabular-nums ${addon ? "text-xs text-default-500" : "text-sm text-default-700"}`}>
+                          {formatCOP(lineSubtotal(item))}
                         </span>
-                        <button
-                          onClick={() => increment(item.product_id)}
-                          className="flex h-10 w-10 items-center justify-center rounded-xl border border-default-200 bg-white text-default-500 hover:bg-default-100 active:scale-90 transition-all"
-                        >
-                          <Plus size={14} weight="bold" />
-                        </button>
                       </div>
 
-                      {/* Subtotal */}
-                      <span className={`w-[72px] text-right font-bold tabular-nums ${addon ? "text-xs text-default-500" : "text-sm text-default-700"}`}>
-                        {formatCOP(item.price * item.quantity)}
-                      </span>
+                      {/* Toppings (nested under base item) — tappable, opens
+                          edit modal for the parent line so the cashier can
+                          fix a mis-selected topping with a direct tap. */}
+                      {item.toppings && item.toppings.length > 0 && (
+                        <ul className="mt-1.5 ml-1 space-y-0.5">
+                          {item.toppings.map((t) => {
+                            const row = (
+                              <>
+                                <span className="text-default-300">+</span>
+                                <span className="flex-1 min-w-0 truncate text-default-500">{t.name}</span>
+                                <span className={`tabular-nums shrink-0 ${t.charge ? "text-amber-600 font-semibold" : "text-default-300 italic"}`}>
+                                  {t.charge ? `+${formatCOP(t.price * item.quantity)}` : "incluido"}
+                                </span>
+                              </>
+                            );
+                            return (
+                              <li key={t.product_id}>
+                                {onEditLine ? (
+                                  <button
+                                    onClick={() => onEditLine(item)}
+                                    className="w-full flex items-center gap-2 text-[11px] pl-2 py-0.5 border-l-2 border-default-100 hover:bg-default-50 hover:border-default-200 active:scale-[0.99] transition-all rounded-r-md"
+                                  >
+                                    {row}
+                                  </button>
+                                ) : (
+                                  <div className="flex items-center gap-2 text-[11px] pl-2 border-l-2 border-default-100">
+                                    {row}
+                                  </div>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
                     </div>
                   </SwipeableRow>
                 );
@@ -134,6 +200,14 @@ export function Cart() {
             >
               Cobrar {formatCOP(total)}
             </button>
+            {secondaryAction && (
+              <button
+                onClick={secondaryAction.onClick}
+                className="w-full h-12 rounded-2xl bg-blue-50 text-blue-700 border-2 border-blue-200 text-sm font-bold hover:bg-blue-100 active:scale-[0.97] transition-all"
+              >
+                {secondaryAction.label}
+              </button>
+            )}
           </div>
         )}
       </div>

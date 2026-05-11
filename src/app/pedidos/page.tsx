@@ -26,7 +26,9 @@ import {
   Storefront,
   PencilSimple,
   ListDashes,
+  Money,
 } from "@phosphor-icons/react";
+import { OrderCheckoutModal, type OrderForCheckout } from "@/components/pedidos/OrderCheckoutModal";
 
 interface OrderItem {
   id: string;
@@ -99,6 +101,24 @@ export default function PedidosPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [processing, setProcessing] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [cobrarOrder, setCobrarOrder] = useState<OrderForCheckout | null>(null);
+
+  function openCobrar(order: Order) {
+    setCobrarOrder({
+      id: order.id,
+      order_number: order.order_number,
+      customer_name: order.customer_name,
+      payment_method: order.payment_method,
+      total: order.total,
+      items: (order.items ?? []).map((i) => ({
+        id: i.id,
+        product_name: i.product_name,
+        quantity: i.quantity,
+        unit_price: i.unit_price,
+        subtotal: i.subtotal,
+      })),
+    });
+  }
 
   const fetchOrders = useCallback(async () => {
     const client = createClient();
@@ -227,7 +247,7 @@ export default function PedidosPage() {
               <LinkSimple size={18} /> Copiar Link
             </button>
             <button
-              onClick={() => router.push("/pedidos/nuevo")}
+              onClick={() => router.push("/pos")}
               className="flex items-center gap-2 h-11 px-5 rounded-2xl bg-primary text-white text-sm font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all"
             >
               <Plus size={18} weight="bold" /> Nuevo
@@ -287,10 +307,14 @@ export default function PedidosPage() {
 
                 return (
                   <div key={order.id} className={`rounded-2xl border-2 overflow-hidden transition-all ${cfg.border} ${!isActive ? "opacity-40 grayscale bg-default-50" : "bg-white"}`}>
-                    {/* Order header */}
-                    <button
+                    {/* Order header — clickable area + inline Cobrar button.
+                        Using a div (not <button>) so we can nest the Cobrar
+                        action inside without invalid HTML. */}
+                    <div
                       onClick={() => { setExpandedId(isExpanded ? null : order.id); playClick(); }}
-                      className="w-full flex items-center gap-3 px-4 py-4 text-left active:bg-black/5 transition-colors"
+                      role="button"
+                      tabIndex={0}
+                      className="w-full flex items-center gap-3 px-4 py-4 text-left active:bg-black/5 transition-colors cursor-pointer"
                     >
                       <div className={`flex h-14 w-14 items-center justify-center rounded-2xl shrink-0 ${order.order_type === "local" ? "bg-blue-50 text-blue-600" : "bg-purple-50 text-purple-600"}`}>
                         {order.order_type === "local" ? <Storefront size={28} weight="fill" /> : <Motorcycle size={28} weight="fill" />}
@@ -315,7 +339,17 @@ export default function PedidosPage() {
                         <p className="text-xl font-extrabold text-default-900 tabular-nums">{formatCOP(order.total)}</p>
                         <p className="text-xs text-default-400 mt-0.5">{order.payment_method === "efectivo" ? "Efectivo" : "Nequi"}</p>
                       </div>
-                    </button>
+                      {isActive && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openCobrar(order); playClick(); }}
+                          className="shrink-0 flex items-center gap-1.5 h-12 px-4 rounded-2xl bg-emerald-500 text-white text-sm font-bold shadow-md shadow-emerald-500/30 hover:brightness-105 active:scale-[0.97] transition-all"
+                          title="Cobrar y entregar"
+                        >
+                          <Money size={18} weight="fill" />
+                          Cobrar
+                        </button>
+                      )}
+                    </div>
 
                     {/* Expanded details */}
                     {isExpanded && (
@@ -362,6 +396,18 @@ export default function PedidosPage() {
                         {/* Action buttons */}
                         {isActive && (
                           <div className="border-t border-default-100 px-4 py-3 space-y-2">
+                            {/* Primary action: collect payment and complete.
+                                This skips the preparing→ready→delivering
+                                workflow — the RPC marks status=delivered
+                                directly. The smaller status-advance button
+                                below is for kitchens that DO want to track
+                                each step. */}
+                            <button
+                              onClick={() => openCobrar(order)}
+                              className="w-full h-16 rounded-2xl bg-emerald-500 text-white text-lg font-bold shadow-lg shadow-emerald-500/30 hover:brightness-105 active:scale-[0.97] transition-all flex items-center justify-center gap-2"
+                            >
+                              <Money size={22} weight="fill" /> Cobrar {formatCOP(order.total)}
+                            </button>
                             {order.status === "pending" && (
                               <button
                                 onClick={() => router.push(`/pedidos/editar?id=${order.id}`)}
@@ -374,20 +420,20 @@ export default function PedidosPage() {
                               <button
                                 onClick={() => handleAdvanceStatus(order)}
                                 disabled={processing === order.id}
-                                className="flex-1 h-16 rounded-2xl bg-primary text-white text-lg font-bold shadow-lg shadow-primary/25 hover:brightness-105 active:scale-[0.97] transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+                                className="flex-1 h-12 rounded-2xl border-2 border-default-200 text-default-500 text-sm font-bold hover:bg-default-50 active:scale-[0.97] transition-all disabled:opacity-40 flex items-center justify-center gap-2"
                               >
                                 {processing === order.id ? (
-                                  <span className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                  <span className="h-5 w-5 border-2 border-default-300 border-t-default-600 rounded-full animate-spin" />
                                 ) : (
-                                  <>{getNextLabel(order.status, order.order_type || "delivery")} <CaretRight size={20} weight="bold" /></>
+                                  <>{getNextLabel(order.status, order.order_type || "delivery")} <CaretRight size={16} weight="bold" /></>
                                 )}
                               </button>
                               <button
                                 onClick={() => handleCancel(order)}
                                 disabled={processing === order.id}
-                                className="h-16 px-6 rounded-2xl border-2 border-red-200 text-red-500 font-bold text-lg hover:bg-red-50 active:scale-[0.97] transition-all"
+                                className="h-12 px-5 rounded-2xl border-2 border-red-200 text-red-500 font-bold text-sm hover:bg-red-50 active:scale-[0.97] transition-all"
                               >
-                                <XCircle size={24} weight="bold" />
+                                <XCircle size={18} weight="bold" />
                               </button>
                             </div>
                           </div>
@@ -401,6 +447,13 @@ export default function PedidosPage() {
           )}
         </div>
       </div>
+
+      <OrderCheckoutModal
+        isOpen={!!cobrarOrder}
+        order={cobrarOrder}
+        onClose={() => setCobrarOrder(null)}
+        onCompleted={() => { setCobrarOrder(null); fetchOrders(); }}
+      />
     </div>
   );
 }

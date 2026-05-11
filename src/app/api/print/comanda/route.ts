@@ -26,6 +26,14 @@ interface ComandaRequest {
   saleNumber: number;
   time: string;
   products: KitchenProduct[];
+  /** "sale" (default) prints "COMANDA #N", "order" prints "PEDIDO #N" */
+  kind?: "sale" | "order";
+  /** Optional customer/order context — rendered only when present. */
+  customerName?: string;
+  orderType?: "local" | "delivery";
+  deliveryAddress?: string;
+  scheduledTime?: string;
+  notes?: string;
   /** Windows printer name for RAW-mode spooler print (bypasses driver rendering) */
   printerName?: string;
 }
@@ -140,15 +148,47 @@ export async function POST(request: Request) {
     printer.append(Buffer.from([0x1B, 0x40, 0x1B, 0x61, 0x00]));
 
     // ══ HEADER ══
+    const headerTitle = data.kind === "order" ? "PEDIDO" : "COMANDA";
     printer.bold(true);
     printer.setTextDoubleHeight();
     printer.append(Buffer.from([0x1B, 0x61, 0x01])); // center
-    printer.println(`COMANDA #${data.saleNumber}`);
+    printer.println(`${headerTitle} #${data.saleNumber}`);
     printer.setTextNormal();
     printer.bold(false);
     printer.println(data.time);
     printer.append(Buffer.from([0x1B, 0x61, 0x00])); // left
     printer.println(separator("="));
+
+    // ══ ORDER CONTEXT (cliente, tipo, dirección, hora) ══
+    // Each line stays within 32 chars by truncating the right side.
+    // The kitchen needs the customer name big and obvious, so it goes
+    // bold without being doubled (32-char limit is tight already).
+    const hasOrderInfo =
+      !!data.customerName || !!data.orderType || !!data.deliveryAddress
+      || !!data.scheduledTime;
+
+    if (hasOrderInfo) {
+      printer.newLine();
+      if (data.customerName) {
+        printer.bold(true);
+        printer.println(truncate(`Cliente: ${data.customerName}`, LINE_WIDTH));
+        printer.bold(false);
+      }
+      if (data.orderType) {
+        const type = data.orderType === "delivery" ? "Domicilio" : "Local";
+        printer.println(truncate(`Tipo:    ${type}`, LINE_WIDTH));
+      }
+      if (data.deliveryAddress) {
+        // Addresses can be long — print as-is, the library will wrap.
+        printer.println("Direccion:");
+        printer.println(data.deliveryAddress);
+      }
+      if (data.scheduledTime) {
+        printer.println(truncate(`Hora:    ${data.scheduledTime}`, LINE_WIDTH));
+      }
+      printer.println(separator("-"));
+    }
+
     printer.newLine();
 
     // ══ PRODUCTS + INGREDIENTS ══
@@ -173,6 +213,16 @@ export async function POST(request: Request) {
         printer.println(truncate(line, 42));
       }
       printer.setTypeFontA();
+      printer.newLine();
+    }
+
+    // ══ NOTES ══
+    if (data.notes) {
+      printer.println(separator("-"));
+      printer.bold(true);
+      printer.println("NOTAS:");
+      printer.bold(false);
+      printer.println(data.notes);
       printer.newLine();
     }
 

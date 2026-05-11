@@ -3,7 +3,6 @@
 import { formatCOP } from "@/lib/utils/format";
 import { useCart } from "@/contexts/CartContext";
 import { ProductIcon } from "@/lib/utils/product-icons";
-import { playAdd } from "@/lib/utils/sounds";
 import { useState } from "react";
 
 interface ProductCardProps {
@@ -13,25 +12,28 @@ interface ProductCardProps {
   image_url?: string;
   icon?: string;
   category_slug?: string;
-  onAdded?: () => void;
+  onTap: () => void;
 }
 
-export function ProductCard({ id, name, price, image_url, icon, category_slug, onAdded }: ProductCardProps) {
-  const { addItem, items } = useCart();
-  const qty = items.find((i) => i.product_id === id)?.quantity ?? 0;
+export function ProductCard({ id, name, price, image_url, icon, onTap }: ProductCardProps) {
+  const { items } = useCart();
+  // Sum quantities across all lines for this product (a product can appear in
+  // multiple lines now — same product with different toppings = different lines).
+  const qty = items
+    .filter((i) => i.product_id === id)
+    .reduce((s, i) => s + i.quantity, 0);
   const inCart = qty > 0;
   const [animating, setAnimating] = useState(false);
 
-  function handleAdd() {
-    addItem({ product_id: id, name, price, image_url, category_slug });
-    playAdd();
+  function handleTap() {
+    onTap();
     setAnimating(true);
     setTimeout(() => setAnimating(false), 400);
   }
 
   return (
     <button
-      onClick={handleAdd}
+      onClick={handleTap}
       className={`group relative flex flex-col items-center rounded-2xl border bg-white p-5 transition-all duration-150 active:scale-[0.93] select-none w-full min-h-[170px]
         ${animating ? "animate-pulse-add" : ""}
         ${inCart

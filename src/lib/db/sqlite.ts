@@ -61,6 +61,7 @@ function getDb(): Database.Database {
       available_in_pos INTEGER DEFAULT 1,
       active INTEGER DEFAULT 1,
       sort_order INTEGER DEFAULT 0,
+      included_toppings_count INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
       updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
       company_id TEXT NOT NULL
@@ -200,6 +201,7 @@ function getDb(): Database.Database {
   // Schema migrations for existing databases
   try { _db.exec("ALTER TABLE inventory_movements ADD COLUMN supplier_id TEXT"); } catch { /* already exists */ }
   try { _db.exec("ALTER TABLE orders ADD COLUMN order_type TEXT NOT NULL DEFAULT 'delivery'"); } catch { /* already exists */ }
+  try { _db.exec("ALTER TABLE products ADD COLUMN included_toppings_count INTEGER NOT NULL DEFAULT 0"); } catch { /* already exists */ }
 
   return _db;
 }
