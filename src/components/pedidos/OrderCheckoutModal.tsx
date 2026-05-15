@@ -129,7 +129,16 @@ export function OrderCheckoutModal({ isOpen, order, onClose, onCompleted }: Orde
       }
 
       const { data: rpcData, error } = await client.rpc("fn_complete_order", { p_order_id: order.id });
-      if (error || !rpcData) throw new Error(error?.message || "RPC failed");
+      // Surface the backend message so the cashier sees "Pedido ya fue
+      // entregado", "Pedido no encontrado", etc. instead of a generic toast.
+      if (error) {
+        console.error("[OrderCheckoutModal] fn_complete_order error:", error);
+        throw new Error(error.message || "fn_complete_order falló sin mensaje");
+      }
+      if (!rpcData) {
+        console.error("[OrderCheckoutModal] fn_complete_order returned no data");
+        throw new Error("El servidor no devolvió datos de la venta");
+      }
 
       const { saleNumber } = rpcData as { saleId: string; saleNumber: number };
 
@@ -150,8 +159,9 @@ export function OrderCheckoutModal({ isOpen, order, onClose, onCompleted }: Orde
         receiptItems,
       });
     } catch (e) {
-      console.error(e);
-      toast.error("Error al cobrar el pedido");
+      console.error("[OrderCheckoutModal] cobrar failed:", e);
+      const msg = e instanceof Error && e.message ? e.message : "Error al cobrar el pedido";
+      toast.error(msg);
     } finally {
       setProcessing(false);
     }
