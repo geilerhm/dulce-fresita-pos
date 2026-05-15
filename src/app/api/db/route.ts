@@ -410,7 +410,17 @@ function rpcDeductInventory(params: { p_sale_id: string }) {
         }
 
         const deduction = perUnit * item.quantity;
-        const newStock = Math.max(0, ingredient.stock_quantity - deduction);
+        // Defensive: if the multiplication produced a non-finite value
+        // (NaN/Infinity from null/undefined in recipe.quantity or item.quantity),
+        // skip this row instead of crashing the whole transaction on the
+        // inventory_movements.quantity NOT NULL constraint.
+        if (!Number.isFinite(deduction)) {
+          console.warn(
+            `[fn_deduct_inventory] deduction inválido para "${ingredient.name}": perUnit=${perUnit}, qty=${item.quantity}. Se omite.`,
+          );
+          continue;
+        }
+        const newStock = Math.max(0, (ingredient.stock_quantity ?? 0) - deduction);
 
         db.prepare("UPDATE ingredients SET stock_quantity = ?, updated_at = ? WHERE id = ?")
           .run(newStock, new Date().toISOString(), recipe.ingredient_id);
@@ -499,8 +509,17 @@ function rpcCompleteOrder(params: { p_order_id: string }) {
           continue;
         }
         const deduction = perUnit * si.quantity;
+        // Same defensive skip as fn_deduct_inventory — non-finite deductions
+        // (NaN/Infinity from null in recipe/item quantities) would otherwise
+        // hit inventory_movements.quantity NOT NULL and abort the whole sale.
+        if (!Number.isFinite(deduction)) {
+          console.warn(
+            `[fn_complete_order] deduction inválido para "${ingredient.name}": perUnit=${perUnit}, qty=${si.quantity}. Se omite.`,
+          );
+          continue;
+        }
         db.prepare("UPDATE ingredients SET stock_quantity = ?, updated_at = ? WHERE id = ?")
-          .run(Math.max(0, ingredient.stock_quantity - deduction), new Date().toISOString(), recipe.ingredient_id);
+          .run(Math.max(0, (ingredient.stock_quantity ?? 0) - deduction), new Date().toISOString(), recipe.ingredient_id);
         db.prepare(
           "INSERT INTO inventory_movements (id, ingredient_id, type, quantity, reference_id, created_at, company_id) VALUES (?, ?, ?, ?, ?, ?, ?)"
         ).run(randomUUID(), recipe.ingredient_id, "sale_deduction", -deduction, saleId, new Date().toISOString(), ingredient.company_id);
